@@ -13,7 +13,7 @@ from app.dependencies import (
 from app.models import (
     ChatRequest, ChatResponse, TaskState, LocationResolveRequest, ResolvedLocation, 
     NearbyOfficesResponse, GovernmentOffice, RoadmapGenerateRequest, Roadmap, 
-    ProgressUpdateRequest, RoadmapProgress
+    ProgressUpdateRequest, RoadmapProgress, ProcedureGenerateRequest, ProcedureGenerateResponse
 )
 from app.services.chatbot_service import ChatbotService
 from app.services.location_service import LocationService
@@ -21,6 +21,8 @@ from app.services.roadmap_service import RoadmapService, RoadmapValidationError
 from app.services.supabase_service import SupabaseService
 from app.services.voice_service import VoiceService, VoiceServiceError
 from app.services.nlp_service import NLPServiceError
+from app.services.scraper_service import ScraperService
+from app.dependencies import get_scraper_service
 
 logger = logging.getLogger(__name__)
 api_router = APIRouter(prefix="/api")
@@ -62,6 +64,49 @@ async def get_nearby_offices(
             offices.append(GovernmentOffice(id=row["id"], name=row["name"], department=row["department"], address=row.get("address", ""), latitude=row["latitude"], longitude=row["longitude"], distance_km=round(dist, 2), phone=row.get("phone"), email=row.get("email"), website=row.get("website"), source_url=row.get("source_url")))
     offices.sort(key=lambda o: o.distance_km or 0)
     return NearbyOfficesResponse(offices=offices)
+
+# --- Procedure Routes ---
+
+@api_router.post("/procedure/generate", response_model=ProcedureGenerateResponse)
+async def generate_procedure_endpoint(
+    body: ProcedureGenerateRequest,
+    scraper: ScraperService = Depends(get_scraper_service),
+) -> ProcedureGenerateResponse:
+    try:
+        # Build search query
+        query = scraper._build_search_query(body.task, body.location, body.details)
+        
+        # Search DuckDuckGo
+        urls = await scraper.search_gov_sites(query, max_results=2)
+        if not urls:
+            raise HTTPException(status_code=404, detail="No official government procedures found for this task.")
+            
+        # Scrape Firecrawl
+        combined_markdown = ""
+        successful_urls = []
+        for url in urls:
+            md_content = await scraper.scrape_url(url)
+            if md_content:
+                combined_markdown += f"\n\nSource: {url}\n{md_content}\n"
+                successful_urls.append(url)
+                break
+                
+        if not combined_markdown:
+            raise HTTPException(status_code=502, detail="Failed to scrape content from official sources.")
+            
+        # Generate with Ollama
+        task_profile = {"task": body.task, "location": body.location, "details": body.details}
+        procedure = await scraper.generate_procedure(task_profile, combined_markdown)
+        
+        if not procedure:
+            raise HTTPException(status_code=500, detail="Failed to generate procedure with LLM.")
+            
+        return ProcedureGenerateResponse(procedure=procedure, sources=successful_urls)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Procedure generation failed")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 # --- Chat Routes ---
 

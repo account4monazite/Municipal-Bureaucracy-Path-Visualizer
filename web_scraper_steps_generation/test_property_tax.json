@@ -1,0 +1,11 @@
+{
+  "task": "property_tax_payment",
+  "location": {
+    "city": "Chennai",
+    "state": "Tamil Nadu"
+  },
+  "details": {
+    "property_type": "residential",
+    "payment_mode": "online"
+  }
+}

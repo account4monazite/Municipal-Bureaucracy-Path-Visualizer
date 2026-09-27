@@ -1,0 +1,10 @@
+{
+  "task": "sir_registration",
+  "location": {
+    "city": "Mumbai",
+    "state": "Maharashtra"
+  },
+  "details": {
+    "registration_type": "voter_verification"
+  }
+}

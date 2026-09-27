@@ -250,3 +250,12 @@ class RoadmapProgress(BaseModel):
     completed_steps: int = 0
     percentage: float = 0.0
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class ProcedureGenerateRequest(BaseModel):
+    task: str
+    location: Dict[str, Any] = Field(default_factory=dict)
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+class ProcedureGenerateResponse(BaseModel):
+    procedure: str
+    sources: List[str] = []

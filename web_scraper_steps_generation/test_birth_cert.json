@@ -1,0 +1,11 @@
+{
+  "task": "birth_certificate_registration",
+  "location": {
+    "city": "Bengaluru",
+    "state": "Karnataka"
+  },
+  "details": {
+    "applicant_relation": "parent",
+    "days_since_birth": "less_than_21"
+  }
+}

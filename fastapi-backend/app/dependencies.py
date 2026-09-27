@@ -10,6 +10,11 @@ from app.services.nlp_service import NLPService
 from app.services.roadmap_service import RoadmapService
 from app.services.supabase_service import SupabaseService
 from app.services.voice_service import VoiceService
+from app.services.scraper_service import ScraperService
+
+@lru_cache
+def get_scraper_service() -> ScraperService:
+    return ScraperService()
 
 
 @lru_cache

@@ -1,0 +1,10 @@
+{
+  "task": "driving_license_application",
+  "location": {
+    "city": "New Delhi",
+    "state": "Delhi"
+  },
+  "details": {
+    "vehicle_type": "two_wheeler_with_gear"
+  }
+}
