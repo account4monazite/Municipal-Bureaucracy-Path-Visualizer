@@ -8,23 +8,17 @@ from gov_procedure_scraper import build_search_query_from_json, search_gov_sites
 
 app = FastAPI(title="Gov Procedure API")
 
-# Define the expected JSON body format (can accept any arbitrary JSON)
+# Define the expected JSON body format
 class TaskRequest(BaseModel):
-    task: str
-    location: Dict[str, str]
-    details: Dict[str, Any]
+    query: str
 
 @app.post("/generate-procedure")
 async def generate_procedure(request: TaskRequest):
     try:
-        # Convert the Pydantic model to a standard dictionary
-        json_data = request.model_dump()
+        query = request.query
         
-        # 1. Build Query
-        base_query = build_search_query_from_json(json_data)
-        
-        # 2. Search for URLs
-        urls = search_gov_sites(base_query, max_results=2)
+        # 1. Search for URLs
+        urls = search_gov_sites(query, max_results=2)
         if not urls:
             raise HTTPException(status_code=404, detail="No government websites found for this query.")
             
@@ -41,14 +35,14 @@ async def generate_procedure(request: TaskRequest):
         if not combined_markdown:
             raise HTTPException(status_code=500, detail="Could not retrieve content from any of the URLs.")
             
-        # 4. Generate Procedure
-        procedure = generate_procedure_with_ollama(json_data, combined_markdown)
+        # 3. Generate Procedure
+        procedure = generate_procedure_with_ollama(query, combined_markdown)
         
         if not procedure:
             raise HTTPException(status_code=500, detail="Failed to generate procedure with Ollama.")
             
         return {
-            "query_used": base_query,
+            "query_used": query,
             "urls_scraped": used_urls,
             "procedure": procedure
         }
@@ -63,14 +57,16 @@ async def websocket_generate_procedure(websocket: WebSocket):
         # Wait for the client to send the JSON payload
         data = await websocket.receive_text()
         json_data = json.loads(data)
+        query = json_data.get("query", "")
         
-        # 1. Build Query
-        await websocket.send_json({"status": "progress", "message": "Building search query..."})
-        base_query = build_search_query_from_json(json_data)
-        
-        # 2. Search for URLs
-        await websocket.send_json({"status": "progress", "message": f"Searching for: {base_query}..."})
-        urls = search_gov_sites(base_query, max_results=2)
+        if not query:
+            await websocket.send_json({"status": "error", "message": "Query cannot be empty."})
+            await websocket.close()
+            return
+            
+        # 1. Search for URLs
+        await websocket.send_json({"status": "progress", "message": f"Searching for: {query}..."})
+        urls = search_gov_sites(query, max_results=2)
         
         if not urls:
             await websocket.send_json({"status": "error", "message": "No government websites found for this query."})
@@ -115,7 +111,7 @@ async def websocket_generate_procedure(websocket: WebSocket):
         procedure_json_str = ""
         emitted_thoughts = set()
         
-        for chunk in generate_procedure_with_ollama_stream(json_data, combined_markdown):
+        for chunk in generate_procedure_with_ollama_stream(query, combined_markdown):
             if chunk is None:
                 await websocket.send_json({"status": "error", "message": "Failed to stream procedure from Ollama."})
                 await websocket.close()
@@ -148,7 +144,7 @@ async def websocket_generate_procedure(websocket: WebSocket):
         # 5. Send Final Result
         await websocket.send_json({
             "status": "completed",
-            "query_used": base_query,
+            "query_used": query,
             "urls_scraped": used_urls,
             "procedure": procedure
         })
