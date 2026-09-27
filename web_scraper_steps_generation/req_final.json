@@ -1,0 +1,123 @@
+{
+  "task": "Aadhar card phone number update Mumbai Maharasthra",
+  "narrative": "Process Type: Hybrid. Estimated Time: Information not available in the provided context.",
+  "initialNodes": [
+    "node_prereqs_main",
+    "step_1",
+    "step_2",
+    "step_3",
+    "step_4",
+    "step_5",
+    "step_6"
+  ],
+  "initialEdges": [
+    {
+      "source": "node_prereqs_main",
+      "target": "step_1"
+    },
+    {
+      "source": "step_1",
+      "target": "step_2"
+    },
+    {
+      "source": "step_2",
+      "target": "step_3"
+    },
+    {
+      "source": "step_3",
+      "target": "step_4"
+    },
+    {
+      "source": "step_4",
+      "target": "step_5"
+    },
+    {
+      "source": "step_5",
+      "target": "step_6"
+    }
+  ],
+  "nodes": {
+    "prereq_1": {
+      "id": "prereq_1",
+      "type": "process",
+      "title": "Aadhaar Number",
+      "chatText": "Aadhaar Number",
+      "prerequisites": []
+    },
+    "prereq_2": {
+      "id": "prereq_2",
+      "type": "process",
+      "title": "Mobile Number",
+      "chatText": "Mobile Number",
+      "prerequisites": []
+    },
+    "doc_1": {
+      "id": "doc_1",
+      "type": "document",
+      "title": "Valid ID proof",
+      "chatText": "Valid ID proof",
+      "prerequisites": []
+    },
+    "doc_2": {
+      "id": "doc_2",
+      "type": "document",
+      "title": "Address proof (if address upda...",
+      "chatText": "Address proof (if address update is required)",
+      "prerequisites": []
+    },
+    "node_prereqs_main": {
+      "id": "node_prereqs_main",
+      "type": "process",
+      "title": "Prerequisites & Docs",
+      "chatText": "Expand to see all requirements and documents needed before starting.",
+      "prerequisites": [
+        "prereq_1",
+        "prereq_2",
+        "doc_1",
+        "doc_2"
+      ]
+    },
+    "step_1": {
+      "id": "step_1",
+      "type": "process",
+      "title": "Step 1",
+      "chatText": "Step 1: Download the Aadhaar app on your Android/iOS device from the Play Store/App Store.",
+      "prerequisites": []
+    },
+    "step_2": {
+      "id": "step_2",
+      "type": "process",
+      "title": "Step 2: Select Language and enter your Aadhaar number",
+      "chatText": "Step 2: Select Language and enter your Aadhaar number.",
+      "prerequisites": []
+    },
+    "step_3": {
+      "id": "step_3",
+      "type": "process",
+      "title": "Step 3",
+      "chatText": "Step 3: Agree to the Terms and Conditions and Privacy Policy.",
+      "prerequisites": []
+    },
+    "step_4": {
+      "id": "step_4",
+      "type": "process",
+      "title": "Step 4: Choose the SIM card and perform Face Authentication",
+      "chatText": "Step 4: Choose the SIM card and perform Face Authentication.",
+      "prerequisites": []
+    },
+    "step_5": {
+      "id": "step_5",
+      "type": "process",
+      "title": "Step 5",
+      "chatText": "Step 5: Register on the app and set a 6-digit PIN to secure access.",
+      "prerequisites": []
+    },
+    "step_6": {
+      "id": "step_6",
+      "type": "process",
+      "title": "Step 6: Update your mobile number on the app",
+      "chatText": "Step 6: Update your mobile number on the app.",
+      "prerequisites": []
+    }
+  }
+}

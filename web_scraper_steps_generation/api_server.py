@@ -168,47 +168,67 @@ async def websocket_generate_procedure(websocket: WebSocket):
         initial_edges = []
         
         if isinstance(procedure, dict):
+            prereq_node_ids = []
             prereqs = procedure.get("prerequisites", [])
             if prereqs and isinstance(prereqs, list):
-                nodes["node_prereqs"] = {
-                    "id": "node_prereqs", "type": "custom", "title": "Prerequisites",
-                    "chatText": "\n".join([f"- {p}" for p in prereqs]), "prerequisites": []
-                }
-                initial_nodes.append("node_prereqs")
+                for k, prereq in enumerate(prereqs):
+                    prereq_id = f"prereq_{k+1}"
+                    title = str(prereq)[:30] + "..." if len(str(prereq)) > 30 else str(prereq)
+                    nodes[prereq_id] = {
+                        "id": prereq_id, "type": "process", "title": title,
+                        "chatText": str(prereq), "prerequisites": []
+                    }
+                    prereq_node_ids.append(prereq_id)
                 
+            doc_node_ids = []
             docs = procedure.get("required_documentation", [])
             if docs and isinstance(docs, list):
-                nodes["node_docs"] = {
-                    "id": "node_docs", "type": "custom", "title": "Required Documents",
-                    "chatText": "\n".join([f"- {d}" for d in docs]), "prerequisites": []
-                }
-                initial_nodes.append("node_docs")
+                for j, doc in enumerate(docs):
+                    doc_id = f"doc_{j+1}"
+                    title = str(doc)[:30] + "..." if len(str(doc)) > 30 else str(doc)
+                    nodes[doc_id] = {
+                        "id": doc_id, "type": "document", "title": title,
+                        "chatText": str(doc), "prerequisites": []
+                    }
+                    doc_node_ids.append(doc_id)
                 
             steps = procedure.get("step_by_step_procedure", [])
             prev_node_id = None
+            
+            # Create a main Prerequisites node to hold all docs and prereqs
+            if prereq_node_ids or doc_node_ids:
+                nodes["node_prereqs_main"] = {
+                    "id": "node_prereqs_main",
+                    "type": "process",
+                    "title": "Prerequisites & Docs",
+                    "chatText": "Expand to see all requirements and documents needed before starting.",
+                    "prerequisites": prereq_node_ids + doc_node_ids
+                }
+                initial_nodes.append("node_prereqs_main")
+                prev_node_id = "node_prereqs_main"
+                
             if steps and isinstance(steps, list):
                 for i, step in enumerate(steps):
-                    node_id = f"node_step_{i+1}"
+                    node_id = f"step_{i+1}"
                     title = f"Step {i+1}"
-                    if isinstance(step, str):
+                    chat_text = str(step)
+                    
+                    if isinstance(step, dict):
+                        title = step.get("title", title)
+                        chat_text = step.get("description", step.get("text", chat_text))
+                    elif isinstance(step, str):
                         first_sentence = step.split('.')[0] if '.' in step else step
                         if len(first_sentence) < 60:
                             title = first_sentence
+
                     nodes[node_id] = {
-                        "id": node_id, "type": "custom", "title": title,
-                        "chatText": str(step), "prerequisites": []
+                        "id": node_id, "type": "process", "title": title,
+                        "chatText": chat_text, "prerequisites": []
                     }
                     initial_nodes.append(node_id)
                     if prev_node_id:
                         initial_edges.append({"source": prev_node_id, "target": node_id})
                     prev_node_id = node_id
-                
-                first_step_id = "node_step_1" if steps else None
-                if first_step_id:
-                    if "node_prereqs" in initial_nodes:
-                        initial_edges.append({"source": "node_prereqs", "target": first_step_id})
-                    if "node_docs" in initial_nodes:
-                        initial_edges.append({"source": "node_docs", "target": first_step_id})
 
             process_type = procedure.get("process_type", "N/A")
             estimated_time = procedure.get("estimated_time", "N/A")
@@ -223,6 +243,13 @@ async def websocket_generate_procedure(websocket: WebSocket):
             "initialEdges": initial_edges,
             "nodes": nodes
         }
+        
+        # Save the final JSON to a local file for debugging
+        try:
+            with open("req_final.json", "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to save req_final.json: {e}")
             
         # 5. Send Final Result
         await websocket.send_json({
