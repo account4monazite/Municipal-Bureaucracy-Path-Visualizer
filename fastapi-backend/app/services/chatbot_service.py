@@ -104,8 +104,7 @@ class ChatbotService:
         """Merge NLP-extracted fields into existing task state (non-destructive)."""
         extracted_intent = extracted.get("intent")
         if extracted_intent and str(extracted_intent).lower() != "unknown":
-            if not state.intent or state.intent.lower() == "unknown":
-                state.intent = extracted_intent
+            state.intent = extracted_intent
 
         loc = extracted.get("location") or {}
         if isinstance(loc, dict):
@@ -145,42 +144,40 @@ class ChatbotService:
         if client is None:
             return self._rule_based_reply(state)
 
+        context_note = self._build_context_note(state)
+        system_message = SYSTEM_PROMPT
+        if context_note:
+            system_message += f"\n\nCurrent task state:\n{context_note}"
+
+        messages: list[ChatCompletionMessageParam] = [
+            {"role": "system", "content": system_message},
+        ]
+        for message in state.conversation_history[:-1]:
+            if message.role == "assistant":
+                messages.append(
+                    {"role": "assistant", "content": message.content}
+                )
+            elif message.role == "user":
+                messages.append({"role": "user", "content": message.content})
+
+        messages.append({"role": "user", "content": user_message})
+
+        model = self._settings.groq_model.strip()
         try:
-            context_note = self._build_context_note(state)
-            system_message = SYSTEM_PROMPT
-            if context_note:
-                system_message += f"\n\nCurrent task state:\n{context_note}"
-
-            messages: list[ChatCompletionMessageParam] = [
-                {"role": "system", "content": system_message},
-            ]
-            for message in state.conversation_history[:-1]:
-                if message.role == "assistant":
-                    messages.append(
-                        {"role": "assistant", "content": message.content}
-                    )
-                elif message.role == "user":
-                    messages.append({"role": "user", "content": message.content})
-
-            messages.append({"role": "user", "content": user_message})
-
-            logger.info(
-                "Sending chat completion request to Groq (model=%s)",
-                self._settings.groq_model,
-            )
+            logger.info("Sending chat completion request to Groq (model=%s)", model)
             response = await client.chat.completions.create(
-                model=self._settings.groq_model,
+                model=model,
                 messages=messages,
             )
             logger.info(
                 "Groq API request succeeded (model=%s, request_id=%s)",
-                self._settings.groq_model,
+                model,
                 getattr(response, "id", "unknown"),
             )
             reply = response.choices[0].message.content
             return reply or self._rule_based_reply(state)
-        except Exception as exc:
-            logger.error("Groq reply generation failed: %s", exc)
+        except Exception:
+            logger.exception("Groq reply generation failed (model=%s)", model)
             return self._rule_based_reply(state)
 
     def _rule_based_reply(self, state: TaskState) -> str:

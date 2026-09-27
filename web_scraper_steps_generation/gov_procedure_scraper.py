@@ -56,7 +56,7 @@ def search_gov_sites(query: str, max_results: int = 3, max_retries: int = 2):
             
         results = []
         try:
-            response = requests.post(search_url, json=payload, headers=headers)
+            response = requests.post(search_url, json=payload, headers=headers, timeout=5.0)
             response.raise_for_status()
             data = response.json()
             if data.get("success") and "data" in data and len(data["data"]) > 0:
@@ -90,7 +90,7 @@ def scrape_url_with_firecrawl(url: str):
     }
     
     try:
-        response = requests.post(FIRECRAWL_API_URL, json=payload, headers=headers)
+        response = requests.post(FIRECRAWL_API_URL, json=payload, headers=headers, timeout=5.0)
         response.raise_for_status()
         data = response.json()
         if data.get("success"):
@@ -143,11 +143,9 @@ Instructions:
             {"role": "user", "content": prompt}
         ],
         "stream": False,
-        "format": ProcedureResponse.model_json_schema()
     }
-    
     try:
-        response = requests.post(OLLAMA_API_URL, json=payload)
+        response = requests.post(OLLAMA_API_URL, json=payload, timeout=10.0)
         response.raise_for_status()
         data = response.json()
         return data["message"]["content"]

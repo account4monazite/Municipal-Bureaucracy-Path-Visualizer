@@ -212,12 +212,14 @@ class NLPServiceRequest(BaseModel):
 
 
 class NLPServiceResponse(BaseModel):
-
     task: str
-    steps: List[Dict[str, Any]] = []
-    requirements: List[Dict[str, Any]] = []
-    dependencies: List[Dict[str, Any]] = []
-    sources: List[Dict[str, Any]] = []
+    initialNodes: List[str] = Field(default_factory=list)
+    initialEdges: List[Dict[str, Any]] = Field(default_factory=list)
+    nodes: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    steps: List[Dict[str, Any]] = Field(default_factory=list)
+    requirements: List[Dict[str, Any]] = Field(default_factory=list)
+    dependencies: List[Dict[str, Any]] = Field(default_factory=list)
+    sources: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 

@@ -16,8 +16,8 @@ def _make_nlp(use_mock: bool = True) -> NLPService:
     with patch("app.services.nlp_service.get_settings") as ms:
         ms.return_value.nlp_service_url = "http://localhost:8001"
         ms.return_value.nlp_service_timeout = 10
-        with patch.dict("os.environ", {"USE_MOCK_NLP": "true" if use_mock else "false"}):
-            return NLPService()
+        ms.return_value.use_mock_nlp = use_mock
+        return NLPService()
 
 
 @pytest.mark.asyncio
@@ -97,3 +97,46 @@ async def test_extract_task_mock_detects_aadhaar_update():
     nlp = _make_nlp(use_mock=True)
     result = await nlp.extract_task("i want to update my aadhar card")
     assert result["intent"] == "aadhaar_update"
+
+
+@pytest.mark.asyncio
+async def test_extract_task_mock_detects_income_certificate():
+    nlp = _make_nlp(use_mock=True)
+    result = await nlp.extract_task("I want to issue an income certificate")
+    assert result["intent"] == "income_certificate"
+
+
+@pytest.mark.asyncio
+async def test_extract_task_mock_detects_seawoods_darave_location():
+    nlp = _make_nlp(use_mock=True)
+    result = await nlp.extract_task("Seawoods Darave")
+
+    assert result["location"] == {
+        "city": "Navi Mumbai",
+        "district": "Thane",
+        "state": "Maharashtra",
+    }
+
+
+@pytest.mark.asyncio
+async def test_extract_task_real_enriches_missing_location():
+    nlp = _make_nlp(use_mock=False)
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "intent": None,
+        "location": None,
+        "details": {},
+    }
+
+    with patch("httpx.AsyncClient") as mock_cls:
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_cls.return_value = mock_client
+
+        result = await nlp.extract_task("I want an income certificate in Seawoods Darave")
+
+    assert result["intent"] == "income_certificate"
+    assert result["location"]["city"] == "Navi Mumbai"
+    assert result["location"]["state"] == "Maharashtra"

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from typing import Any, Dict, Optional
 
 import httpx
@@ -146,10 +145,49 @@ class NLPService:
         settings = get_settings()
         self._base_url = settings.nlp_service_url.rstrip("/")
         self._timeout = settings.nlp_service_timeout
-        self._use_mock = os.getenv("USE_MOCK_NLP", "true").lower() == "true"
+        self._use_mock = settings.use_mock_nlp
         logger.info(
             "NLPService ready (base_url=%s, use_mock=%s)", self._base_url, self._use_mock
         )
+
+    @staticmethod
+    def _extract_location(user_message: str) -> Optional[Dict[str, str]]:
+        msg = user_message.lower()
+        locations = {
+            "seawoods darave": {"city": "Navi Mumbai", "district": "Thane", "state": "Maharashtra"},
+            "seawoods": {"city": "Navi Mumbai", "district": "Thane", "state": "Maharashtra"},
+            "darave": {"city": "Navi Mumbai", "district": "Thane", "state": "Maharashtra"},
+            "belapur": {"city": "Navi Mumbai", "district": "Thane", "state": "Maharashtra"},
+            "mumbai": {"city": "Mumbai", "state": "Maharashtra"},
+            "delhi": {"city": "Delhi", "state": "Delhi"},
+            "bangalore": {"city": "Bangalore", "state": "Karnataka"},
+            "bengaluru": {"city": "Bangalore", "state": "Karnataka"},
+            "chennai": {"city": "Chennai", "state": "Tamil Nadu"},
+            "hyderabad": {"city": "Hyderabad", "state": "Telangana"},
+            "pune": {"city": "Pune", "state": "Maharashtra"},
+            "kolkata": {"city": "Kolkata", "state": "West Bengal"},
+        }
+        for keyword, location in locations.items():
+            if keyword in msg:
+                return location
+        return None
+
+    @staticmethod
+    def _extract_intent(user_message: str) -> Optional[str]:
+        msg = user_message.lower()
+        if any(word in msg for word in ["income certificate", "income cert", "income proof"]):
+            return "income_certificate"
+        if any(word in msg for word in ["aadhaar", "aadhar", "uidai"]):
+            return "aadhaar_update"
+        if "birth certificate" in msg:
+            return "birth_certificate"
+        if "passport" in msg:
+            return "passport_application"
+        if any(word in msg for word in ["driving", "licence", "license", "dl"]):
+            return "driving_license"
+        if any(word in msg for word in ["register", "registration", "business", "company", "firm"]):
+            return "business_registration"
+        return None
 
     async def fetch_requirements(self, request: NLPServiceRequest) -> NLPServiceResponse:
         """
@@ -204,37 +242,11 @@ class NLPService:
         """
         if self._use_mock:
             # Minimal keyword-based extraction for development
-            msg = user_message.lower()
-            intent = None
-            location = None
+            intent = self._extract_intent(user_message)
+            location = self._extract_location(user_message)
             details: Dict[str, Any] = {}
 
-            if any(w in msg for w in ["register", "registration", "business", "company", "firm"]):
-                intent = "business_registration"
-            elif any(w in msg for w in ["passport"]):
-                intent = "passport_application"
-            elif any(w in msg for w in ["driving", "licence", "license", "dl"]):
-                intent = "driving_license"
-            elif any(w in msg for w in ["birth certificate"]):
-                intent = "birth_certificate"
-            elif any(w in msg for w in ["aadhaar", "aadhar", "uidai"]):
-                intent = "aadhaar_update"
-
-            # Very basic location extraction
-            cities = {
-                "mumbai": ("Mumbai", "Maharashtra"),
-                "delhi": ("Delhi", "Delhi"),
-                "bangalore": ("Bangalore", "Karnataka"),
-                "bengaluru": ("Bangalore", "Karnataka"),
-                "chennai": ("Chennai", "Tamil Nadu"),
-                "hyderabad": ("Hyderabad", "Telangana"),
-                "pune": ("Pune", "Maharashtra"),
-                "kolkata": ("Kolkata", "West Bengal"),
-            }
-            for keyword, (city, state) in cities.items():
-                if keyword in msg:
-                    location = {"city": city, "state": state}
-                    break
+            msg = user_message.lower()
 
             if "restaurant" in msg:
                 details["business_type"] = "restaurant"
@@ -252,7 +264,20 @@ class NLPService:
             try:
                 resp = await client.post(url, json=payload)
                 resp.raise_for_status()
-                return resp.json()
+                data = resp.json()
+                if isinstance(data, dict) and not data.get("intent"):
+                    extracted_intent = self._extract_intent(user_message)
+                    if extracted_intent:
+                        data["intent"] = extracted_intent
+                extracted_location = self._extract_location(user_message)
+                if extracted_location and isinstance(data, dict):
+                    remote_location = data.get("location")
+                    if not isinstance(remote_location, dict):
+                        remote_location = {}
+                        data["location"] = remote_location
+                    for key, value in extracted_location.items():
+                        remote_location.setdefault(key, value)
+                return data
             except Exception as exc:
                 logger.warning("NLPService extract_task failed, returning empty: %s", exc)
                 return {"intent": None, "location": None, "details": {}}

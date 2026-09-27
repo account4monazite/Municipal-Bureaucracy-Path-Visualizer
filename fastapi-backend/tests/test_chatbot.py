@@ -18,7 +18,7 @@ def _make_chatbot() -> ChatbotService:
     nlp = MagicMock(spec=NLPService)
     with patch("app.services.chatbot_service.get_settings") as mock_settings:
         mock_settings.return_value.groq_api_key = ""
-        mock_settings.return_value.groq_model = "llama-3.3-70b-versatile"
+        mock_settings.return_value.groq_model = "openai/gpt-oss-20b"
         return ChatbotService(nlp_service=nlp)
 
 
@@ -50,13 +50,12 @@ def test_merge_extracted_populates_intent():
     assert updated.details["business_type"] == "restaurant"
 
 
-def test_merge_extracted_does_not_overwrite_existing():
+def test_merge_extracted_updates_intent_for_new_explicit_task():
     cb = _make_chatbot()
     state = TaskState(session_id="s1", intent="passport_application")
-    extracted = {"intent": "business_registration", "location": None, "details": {}}
+    extracted = {"intent": "income_certificate", "location": None, "details": {}}
     updated = cb._merge_extracted(state, extracted)
-    # Existing intent must NOT be overwritten
-    assert updated.intent == "passport_application"
+    assert updated.intent == "income_certificate"
 
 
 # ── _compute_missing ──────────────────────────────────────────────────────────
@@ -114,7 +113,7 @@ async def test_process_message_asks_for_task():
 
     with patch("app.services.chatbot_service.get_settings") as mock_settings:
         mock_settings.return_value.groq_api_key = ""
-        mock_settings.return_value.groq_model = "llama-3.3-70b-versatile"
+        mock_settings.return_value.groq_model = "openai/gpt-oss-20b"
         cb = ChatbotService(nlp_service=nlp)
 
     state = cb.create_initial_state("sess1")
@@ -137,7 +136,7 @@ async def test_process_message_extracts_business_registration():
 
     with patch("app.services.chatbot_service.get_settings") as mock_settings:
         mock_settings.return_value.groq_api_key = ""
-        mock_settings.return_value.groq_model = "llama-3.3-70b-versatile"
+        mock_settings.return_value.groq_model = "openai/gpt-oss-20b"
         cb = ChatbotService(nlp_service=nlp)
 
     state = cb.create_initial_state("sess1")
@@ -162,7 +161,7 @@ async def test_groq_reply_uses_chat_history_and_configured_model():
     mock_groq = MagicMock(AsyncGroq=MagicMock(return_value=mock_client))
     settings = SimpleNamespace(
         groq_api_key="test-key",
-        groq_model="llama-3.3-70b-versatile",
+        groq_model="openai/gpt-oss-20b",
     )
 
     with patch("app.services.chatbot_service.get_settings", return_value=settings):
@@ -179,7 +178,7 @@ async def test_groq_reply_uses_chat_history_and_configured_model():
     call = mock_client.chat.completions.create.await_args
     assert call is not None
     request = call.kwargs
-    assert request["model"] == "llama-3.3-70b-versatile"
+    assert request["model"] == "openai/gpt-oss-20b"
     assert request["messages"][0]["role"] == "system"
     assert {"role": "user", "content": "Earlier question"} in request["messages"]
     assert request["messages"][-1] == {"role": "user", "content": "Current question"}

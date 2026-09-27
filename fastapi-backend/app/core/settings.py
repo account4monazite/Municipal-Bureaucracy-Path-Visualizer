@@ -31,13 +31,17 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("GROQ_API_KEY", "LLM_API_KEY"),
     )
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = Field(
+        default="openai/gpt-oss-20b",
+        validation_alias=AliasChoices("GROQ_MODEL", "LLM_MODEL"),
+    )
 
     geocoding_api_key: str = ""
     geocoding_provider: str = "nominatim"
 
     nlp_service_url: str = "http://localhost:8001"
     nlp_service_timeout: int = 30
+    use_mock_nlp: bool = True
 
     stt_provider: str = "google"
     stt_api_key: str = ""

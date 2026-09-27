@@ -94,8 +94,15 @@ class RoadmapService:
         task_display = (state.intent or "Civic Task").replace("_", " ").title()
         city = state.location.city or state.location.state or "India"
 
-        nodes = [self._parse_node(step) for step in nlp_response.steps]
-        edges = [self._parse_edge(dep) for dep in nlp_response.dependencies]
+        if nlp_response.nodes:
+            nodes = [
+                self._parse_graph_node(node_id, node)
+                for node_id, node in nlp_response.nodes.items()
+            ]
+            edges = self._parse_graph_edges(nlp_response)
+        else:
+            nodes = [self._parse_node(step) for step in nlp_response.steps]
+            edges = [self._parse_edge(dep) for dep in nlp_response.dependencies]
         sources = [self._parse_source(src) for src in nlp_response.sources]
 
         return Roadmap(
@@ -107,6 +114,52 @@ class RoadmapService:
             edges=edges,
             sources=sources,
         )
+
+    @staticmethod
+    def _parse_graph_node(node_id: str, node: Dict[str, Any]) -> RoadmapNode:
+        graph_type = node.get("type", "other")
+        step_type = {
+            "process": StepType.other,
+            "document": StepType.document,
+            "external_link": StepType.application,
+        }.get(graph_type, StepType.other)
+        source_url = node.get("actionLink")
+        return RoadmapNode(
+            id=node.get("id", node_id),
+            title=node.get("title", "Untitled Step"),
+            type=step_type,
+            description=node.get("chatText", ""),
+            source=SourceReference(
+                source_url=source_url,
+                confidence="verified" if source_url else "uncertain",
+            ),
+        )
+
+    @staticmethod
+    def _parse_graph_edges(response: NLPServiceResponse) -> List[RoadmapEdge]:
+        edges: List[RoadmapEdge] = []
+        seen = set()
+        node_ids = set(response.nodes)
+        graph_edges = list(response.initialEdges)
+        graph_edges.extend(
+            {"source": node_id, "target": child_id}
+            for node_id, node in response.nodes.items()
+            for child_id in node.get("prerequisites", [])
+        )
+
+        for edge in graph_edges:
+            source = edge.get("source")
+            target = edge.get("target")
+            if source in node_ids and target in node_ids and (source, target) not in seen:
+                edges.append(
+                    RoadmapEdge(
+                        source=source,
+                        target=target,
+                        relationship=RelationshipType.required_before,
+                    )
+                )
+                seen.add((source, target))
+        return edges
 
     @staticmethod
     def _parse_node(step: Dict[str, Any]) -> RoadmapNode:
