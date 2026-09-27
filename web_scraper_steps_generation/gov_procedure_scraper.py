@@ -73,6 +73,30 @@ def search_gov_sites(query: str, max_results: int = 3, max_retries: int = 2):
     print("[-] After all retries, Firecrawl failed to find any results.")
     return []
 
+def fallback_scrape(url: str):
+    print(f"[*] Attempting fallback scrape for {url}")
+    try:
+        from bs4 import BeautifulSoup
+        import markdownify
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        res = requests.get(url, headers=headers, timeout=10.0)
+        res.raise_for_status()
+        soup = BeautifulSoup(res.text, 'html.parser')
+        
+        # Remove nav, footer, scripts, styles
+        for tag in soup(['nav', 'footer', 'script', 'style', 'header', 'aside']):
+            tag.decompose()
+            
+        md = markdownify.markdownify(str(soup), heading_style="ATX")
+        if not md.strip():
+            return None
+        return md
+    except Exception as ex:
+        print(f"[-] Fallback scrape failed: {ex}")
+        return None
+
 def scrape_url_with_firecrawl(url: str):
     """Scrape the content of a URL using Firecrawl."""
     print(f"[*] Scraping URL with Firecrawler: {url}")
@@ -90,17 +114,17 @@ def scrape_url_with_firecrawl(url: str):
     }
     
     try:
-        response = requests.post(FIRECRAWL_API_URL, json=payload, headers=headers, timeout=5.0)
+        response = requests.post(FIRECRAWL_API_URL, json=payload, headers=headers, timeout=15.0)
         response.raise_for_status()
         data = response.json()
         if data.get("success"):
             return data["data"]["markdown"]
         else:
             print(f"[-] Firecrawl failed to scrape {url}: {data.get('error')}")
-            return None
+            return fallback_scrape(url)
     except requests.exceptions.RequestException as e:
         print(f"[-] Request to Firecrawl failed: {e}")
-        return None
+        return fallback_scrape(url)
 
 class ProcedureResponse(BaseModel):
     process_type: str
@@ -126,12 +150,13 @@ Please structure your JSON response with the following fields:
 - prerequisites: List any conditions or requirements that must be met before starting.
 - required_documentation: List all documents needed for this task.
 - estimated_time: Provide the general time it takes to get this work done (if mentioned).
-- step_by_step_procedure: A clear, sequential guide specific to the user's location and details.
+- step_by_step_procedure: A clear, sequential guide specific to the user's location and details with a title.
 
 Instructions:
 - Only use the information provided in the Official Information Context.
 - If the context does not contain enough information for a specific section (e.g., Estimated Time), explicitly state "Information not available in the provided context."
 - Output valid JSON only, matching the requested schema.
+- Don't use headers like "Here is... " or footers give only the content 
 """
 
     payload = {
@@ -143,7 +168,7 @@ Instructions:
         "stream": False,
     }
     try:
-        response = requests.post(OLLAMA_API_URL, json=payload, timeout=10.0)
+        response = requests.post(OLLAMA_API_URL, json=payload, timeout=120.0)
         response.raise_for_status()
         data = response.json()
         return data["message"]["content"]
@@ -153,6 +178,7 @@ Instructions:
 
 def generate_procedure_with_ollama_stream(query: str, context_text: str):
     """Ask Ollama to generate the procedure, but yield the response chunks as they arrive."""
+    print(f"[*] Generating step-by-step procedure using Ollama ({OLLAMA_MODEL}) (streaming)...")
     prompt = f"""You are a helpful assistant for Indian citizens. Based on the following official government information, provide a comprehensive guide for the user's task.
 
 User Query:
