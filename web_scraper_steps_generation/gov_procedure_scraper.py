@@ -109,16 +109,14 @@ class ProcedureResponse(BaseModel):
     estimated_time: str
     step_by_step_procedure: List[str]
 
-def generate_procedure_with_ollama(json_data: dict, context_text: str):
+def generate_procedure_with_ollama(query: str, context_text: str):
     """Ask Ollama (llama3) to generate a step-by-step procedure based on the context."""
     print(f"[*] Generating step-by-step procedure using Ollama ({OLLAMA_MODEL})...")
     
-    task_desc = json.dumps(json_data, indent=2)
-    
     prompt = f"""You are a helpful assistant for Indian citizens. Based on the following official government information, provide a comprehensive guide for the user's task.
 
-User's Task Profile:
-{task_desc}
+User Query:
+{query}
 
 Official Information Context:
 {context_text}
@@ -153,13 +151,12 @@ Instructions:
         print(f"[-] Request to Ollama failed: {e}")
         return None
 
-def generate_procedure_with_ollama_stream(json_data: dict, context_text: str):
+def generate_procedure_with_ollama_stream(query: str, context_text: str):
     """Ask Ollama to generate the procedure, but yield the response chunks as they arrive."""
-    task_desc = json.dumps(json_data, indent=2)
     prompt = f"""You are a helpful assistant for Indian citizens. Based on the following official government information, provide a comprehensive guide for the user's task.
 
-User's Task Profile:
-{task_desc}
+User Query:
+{query}
 
 Official Information Context:
 {context_text}
@@ -244,7 +241,7 @@ def main():
         return
         
     # 3. Generate Procedure
-    procedure = generate_procedure_with_ollama(json_data, combined_markdown)
+    procedure = generate_procedure_with_ollama(base_query, combined_markdown)
     
     if procedure:
         print("\n" + "="*50)
