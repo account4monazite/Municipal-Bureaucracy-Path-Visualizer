@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import Dict, Any
 
 # Import the functions from your existing scraper script
-from gov_procedure_scraper import build_search_query_from_json, search_gov_sites, scrape_url_with_firecrawl, generate_procedure_with_ollama
+from gov_procedure_scraper import build_search_query_from_json, search_gov_sites, scrape_url_with_firecrawl, generate_procedure_with_ollama, generate_procedure_with_ollama_stream
 
 app = FastAPI(title="Gov Procedure API")
 
@@ -30,10 +30,12 @@ async def generate_procedure(request: TaskRequest):
             
         # 3. Scrape the top URL(s)
         combined_markdown = ""
+        used_urls = []
         for url in urls:
             md_content = scrape_url_with_firecrawl(url)
             if md_content:
                 combined_markdown += f"\n\nSource: {url}\n{md_content}\n"
+                used_urls.append(url)
                 break # Just take the first successful one
                 
         if not combined_markdown:
@@ -47,7 +49,7 @@ async def generate_procedure(request: TaskRequest):
             
         return {
             "query_used": base_query,
-            "urls_scraped": urls,
+            "urls_scraped": used_urls,
             "procedure": procedure
         }
         
@@ -75,13 +77,31 @@ async def websocket_generate_procedure(websocket: WebSocket):
             await websocket.close()
             return
             
+        await websocket.send_json({
+            "status": "sources_found",
+            "urls": urls,
+            "message": f"Found {len(urls)} potential sources to check."
+        })
+            
         # 3. Scrape the top URL(s)
-        await websocket.send_json({"status": "progress", "message": f"Found {len(urls)} URLs. Scraping content..."})
         combined_markdown = ""
+        used_urls = []
+        
         for url in urls:
+            await websocket.send_json({
+                "status": "checking_source", 
+                "url": url,
+                "message": f"Extracting information from: {url}..."
+            })
             md_content = scrape_url_with_firecrawl(url)
             if md_content:
                 combined_markdown += f"\n\nSource: {url}\n{md_content}\n"
+                used_urls.append(url)
+                await websocket.send_json({
+                    "status": "source_success", 
+                    "url": url,
+                    "message": f"Successfully extracted relevant info from {url}!"
+                })
                 break # Just take the first successful one
                 
         if not combined_markdown:
@@ -91,12 +111,33 @@ async def websocket_generate_procedure(websocket: WebSocket):
             
         # 4. Generate Procedure
         await websocket.send_json({"status": "progress", "message": "Analyzing content and generating procedure with Ollama..."})
-        procedure_json_str = generate_procedure_with_ollama(json_data, combined_markdown)
         
-        if not procedure_json_str:
-            await websocket.send_json({"status": "error", "message": "Failed to generate procedure with Ollama."})
-            await websocket.close()
-            return
+        procedure_json_str = ""
+        emitted_thoughts = set()
+        
+        for chunk in generate_procedure_with_ollama_stream(json_data, combined_markdown):
+            if chunk is None:
+                await websocket.send_json({"status": "error", "message": "Failed to stream procedure from Ollama."})
+                await websocket.close()
+                return
+            procedure_json_str += chunk
+            
+            # Detect which section the LLM is currently generating and send a readable update
+            if "process_type" in procedure_json_str and "type" not in emitted_thoughts:
+                await websocket.send_json({"status": "llm_thinking", "message": "Determining process type (online/offline)..."})
+                emitted_thoughts.add("type")
+            elif "prerequisites" in procedure_json_str and "prereq" not in emitted_thoughts:
+                await websocket.send_json({"status": "llm_thinking", "message": "Analyzing prerequisites and conditions..."})
+                emitted_thoughts.add("prereq")
+            elif "required_documentation" in procedure_json_str and "docs" not in emitted_thoughts:
+                await websocket.send_json({"status": "llm_thinking", "message": "Identifying required documents..."})
+                emitted_thoughts.add("docs")
+            elif "estimated_time" in procedure_json_str and "time" not in emitted_thoughts:
+                await websocket.send_json({"status": "llm_thinking", "message": "Calculating estimated timeline..."})
+                emitted_thoughts.add("time")
+            elif "step_by_step_procedure" in procedure_json_str and "steps" not in emitted_thoughts:
+                await websocket.send_json({"status": "llm_thinking", "message": "Formulating step-by-step procedure..."})
+                emitted_thoughts.add("steps")
             
         # Parse the JSON string returned by Ollama back into a dict so it sends cleanly
         try:
@@ -108,7 +149,7 @@ async def websocket_generate_procedure(websocket: WebSocket):
         await websocket.send_json({
             "status": "completed",
             "query_used": base_query,
-            "urls_scraped": urls,
+            "urls_scraped": used_urls,
             "procedure": procedure
         })
         

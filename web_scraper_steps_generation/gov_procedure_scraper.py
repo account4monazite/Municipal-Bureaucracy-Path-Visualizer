@@ -155,6 +155,51 @@ Instructions:
         print(f"[-] Request to Ollama failed: {e}")
         return None
 
+def generate_procedure_with_ollama_stream(json_data: dict, context_text: str):
+    """Ask Ollama to generate the procedure, but yield the response chunks as they arrive."""
+    task_desc = json.dumps(json_data, indent=2)
+    prompt = f"""You are a helpful assistant for Indian citizens. Based on the following official government information, provide a comprehensive guide for the user's task.
+
+User's Task Profile:
+{task_desc}
+
+Official Information Context:
+{context_text}
+
+Please structure your JSON response with the following fields:
+- process_type: State whether the process is completely online, completely offline, or hybrid.
+- prerequisites: List any conditions or requirements that must be met before starting.
+- required_documentation: List all documents needed for this task.
+- estimated_time: Provide the general time it takes to get this work done (if mentioned).
+- step_by_step_procedure: A clear, sequential guide specific to the user's location and details.
+
+Instructions:
+- Only use the information provided in the Official Information Context.
+- If the context does not contain enough information for a specific section (e.g., Estimated Time), explicitly state "Information not available in the provided context."
+- Output valid JSON only, matching the requested schema.
+"""
+    payload = {
+        "model": OLLAMA_MODEL,
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant that outputs strictly in JSON."},
+            {"role": "user", "content": prompt}
+        ],
+        "stream": True,
+        "format": ProcedureResponse.model_json_schema()
+    }
+    
+    try:
+        with requests.post(OLLAMA_API_URL, json=payload, stream=True) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                if line:
+                    data = json.loads(line)
+                    if "message" in data and "content" in data["message"]:
+                        yield data["message"]["content"]
+    except requests.exceptions.RequestException as e:
+        print(f"[-] Streaming request to Ollama failed: {e}")
+        yield None
+
 def main():
     parser = argparse.ArgumentParser(description="Gov Procedure Scraper & Generator")
     parser.add_argument("input_json", type=str, help="JSON string or path to a JSON file representing the task")
