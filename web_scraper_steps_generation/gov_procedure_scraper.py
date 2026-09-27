@@ -10,6 +10,8 @@ import argparse
 import time
 import sys
 import os
+from pydantic import BaseModel
+from typing import List
 
 # Configuration
 FIRECRAWL_API_URL = os.environ.get("FIRECRAWL_API_URL", "http://localhost:3002/v1/scrape")
@@ -37,7 +39,8 @@ def build_search_query_from_json(json_data: dict) -> str:
 def search_gov_sites(query: str, max_results: int = 3, max_retries: int = 2):
     """Search for relevant .gov.in websites using Firecrawl Search."""
     search_query = f"{query} official government website India"
-    print(f"[*] Searching for: '{search_query}'...")
+    print(f"[*] Base Search Query (from JSON): '{query}'")
+    print(f"[*] Final Search Query (with filters): '{search_query}'")
     
     headers = {"Content-Type": "application/json"}
     if FIRECRAWL_API_KEY and FIRECRAWL_API_KEY != "fc-YOUR_API_KEY":
@@ -99,6 +102,13 @@ def scrape_url_with_firecrawl(url: str):
         print(f"[-] Request to Firecrawl failed: {e}")
         return None
 
+class ProcedureResponse(BaseModel):
+    process_type: str
+    prerequisites: List[str]
+    required_documentation: List[str]
+    estimated_time: str
+    step_by_step_procedure: List[str]
+
 def generate_procedure_with_ollama(json_data: dict, context_text: str):
     """Ask Ollama (llama3) to generate a step-by-step procedure based on the context."""
     print(f"[*] Generating step-by-step procedure using Ollama ({OLLAMA_MODEL})...")
@@ -113,25 +123,27 @@ User's Task Profile:
 Official Information Context:
 {context_text}
 
-Please structure your response with the following sections:
-1. **Process Type**: State whether the process is completely online, completely offline, or hybrid.
-2. **Prerequisites**: List any conditions or requirements that must be met before starting.
-3. **Required Documentation**: List all documents needed for this task.
-4. **Estimated Time**: Provide the general time it takes to get this work done (if mentioned).
-5. **Step-by-Step Procedure**: A clear, sequential guide specific to the user's location and details.
+Please structure your JSON response with the following fields:
+- process_type: State whether the process is completely online, completely offline, or hybrid.
+- prerequisites: List any conditions or requirements that must be met before starting.
+- required_documentation: List all documents needed for this task.
+- estimated_time: Provide the general time it takes to get this work done (if mentioned).
+- step_by_step_procedure: A clear, sequential guide specific to the user's location and details.
 
 Instructions:
 - Only use the information provided in the Official Information Context.
 - If the context does not contain enough information for a specific section (e.g., Estimated Time), explicitly state "Information not available in the provided context."
+- Output valid JSON only, matching the requested schema.
 """
 
     payload = {
         "model": OLLAMA_MODEL,
         "messages": [
-            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "system", "content": "You are a helpful assistant that outputs strictly in JSON."},
             {"role": "user", "content": prompt}
         ],
-        "stream": False
+        "stream": False,
+        "format": ProcedureResponse.model_json_schema()
     }
     
     try:
@@ -165,7 +177,9 @@ def main():
             sys.exit(1)
         
     base_query = build_search_query_from_json(json_data)
-    print(f"--- Starting Flow for: '{base_query}' ---")
+    print("\n" + "="*50)
+    print(f"[*] Extracted Base Query: '{base_query}'")
+    print("="*50)
     
     # 1. Search for URLs
     urls = search_gov_sites(base_query, max_results=2)
