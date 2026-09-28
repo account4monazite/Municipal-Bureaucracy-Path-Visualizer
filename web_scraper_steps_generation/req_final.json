@@ -1,17 +1,11 @@
 {
-  "task": "aadhaar card",
+  "task": "Ration card application in Panvel",
   "narrative": "Process Type: Hybrid. Estimated Time: Information not available in the provided context.",
   "initialNodes": [
     "node_prereqs_main",
     "step_1",
     "step_2",
-    "step_3",
-    "step_4",
-    "step_5",
-    "step_6",
-    "step_7",
-    "step_8",
-    "step_9"
+    "step_3"
   ],
   "initialEdges": [
     {
@@ -25,66 +19,21 @@
     {
       "source": "step_2",
       "target": "step_3"
-    },
-    {
-      "source": "step_3",
-      "target": "step_4"
-    },
-    {
-      "source": "step_4",
-      "target": "step_5"
-    },
-    {
-      "source": "step_5",
-      "target": "step_6"
-    },
-    {
-      "source": "step_6",
-      "target": "step_7"
-    },
-    {
-      "source": "step_7",
-      "target": "step_8"
-    },
-    {
-      "source": "step_8",
-      "target": "step_9"
     }
   ],
   "nodes": {
     "prereq_1": {
       "id": "prereq_1",
       "type": "process",
-      "title": "Aadhaar number",
-      "chatText": "Aadhaar number",
-      "prerequisites": []
-    },
-    "prereq_2": {
-      "id": "prereq_2",
-      "type": "process",
-      "title": "Mobile OTP",
-      "chatText": "Mobile OTP",
+      "title": "Identification of beneficiarie...",
+      "chatText": "Identification of beneficiaries/households under the National Food Security Act, 2013 (NFSA)",
       "prerequisites": []
     },
     "doc_1": {
       "id": "doc_1",
       "type": "document",
-      "title": "Aadhaar enrolment form",
-      "chatText": "Aadhaar enrolment form",
-      "prerequisites": []
-    },
-    "doc_2": {
-      "id": "doc_2",
-      "type": "document",
-      "title": "Identity proof (e.g., passport...",
-      "chatText": "Identity proof (e.g., passport, ID card, etc.)",
-      "prerequisites": []
-    },
-    "doc_3": {
-      "id": "doc_3",
-      "type": "document",
-      "title": "Address proof (e.g., utility b...",
-      "chatText": "Address proof (e.g., utility bill, lease agreement, etc.)",
+      "title": "Ration card application form (...",
+      "chatText": "Ration card application form (if available online)",
       "prerequisites": []
     },
     "node_prereqs_main": {
@@ -94,73 +43,28 @@
       "chatText": "Expand to see all requirements and documents needed before starting.",
       "prerequisites": [
         "prereq_1",
-        "prereq_2",
-        "doc_1",
-        "doc_2",
-        "doc_3"
+        "doc_1"
       ]
     },
     "step_1": {
       "id": "step_1",
       "type": "process",
       "title": "Step 1",
-      "chatText": "Step 1: Book an appointment at the nearest Aadhaar Seva Kendra (online or offline).",
+      "chatText": "Step 1: Visit the respective State/UT Food Portals by clicking [here](https://ejawaab.aahaar.nic.in/portal/State_Food_Portals ",
       "prerequisites": []
     },
     "step_2": {
       "id": "step_2",
       "type": "process",
       "title": "Step 2",
-      "chatText": "Step 2: Fill out the Aadhaar enrolment form and gather required documents (offline).",
+      "chatText": "Step 2: Follow the procedure for applying for a new ration card as directed by the respective State/UT Food Portals",
       "prerequisites": []
     },
     "step_3": {
       "id": "step_3",
       "type": "process",
       "title": "Step 3",
-      "chatText": "Step 3: Visit the Aadhaar Seva Kendra with the required documents and biometric data (offline).",
-      "prerequisites": []
-    },
-    "step_4": {
-      "id": "step_4",
-      "type": "process",
-      "title": "Step 4",
-      "chatText": "Step 4: Complete the enrolment process and receive your Aadhaar number (offline).",
-      "prerequisites": []
-    },
-    "step_5": {
-      "id": "step_5",
-      "type": "process",
-      "title": "Step 5",
-      "chatText": "Step 5: Update your address (if necessary) by filling out the address update form and submitting it online or offline.",
-      "prerequisites": []
-    },
-    "step_6": {
-      "id": "step_6",
-      "type": "process",
-      "title": "Step 6: Download or order your Aadhaar PVC card (online)",
-      "chatText": "Step 6: Download or order your Aadhaar PVC card (online).",
-      "prerequisites": []
-    },
-    "step_7": {
-      "id": "step_7",
-      "type": "process",
-      "title": "Step 7: Generate a Virtual ID (online)",
-      "chatText": "Step 7: Generate a Virtual ID (online).",
-      "prerequisites": []
-    },
-    "step_8": {
-      "id": "step_8",
-      "type": "process",
-      "title": "Step 8: Download masked Aadhaar (online)",
-      "chatText": "Step 8: Download masked Aadhaar (online).",
-      "prerequisites": []
-    },
-    "step_9": {
-      "id": "step_9",
-      "type": "process",
-      "title": "Step 9: Lock or unlock biometrics and Aadhaar (online)",
-      "chatText": "Step 9: Lock or unlock biometrics and Aadhaar (online).",
+      "chatText": "Step 3: Gather required documentation (ration card application form, if available online) and follow the application procedure",
       "prerequisites": []
     }
   }

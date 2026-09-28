@@ -25,7 +25,10 @@ from gov_procedure_scraper import (
     scrape_url_with_firecrawl,
     generate_procedure_with_ollama,
     generate_procedure_with_ollama_stream,
+    OLLAMA_API_URL,
+    OLLAMA_MODEL,
 )
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +111,45 @@ async def websocket_generate_procedure(websocket: WebSocket):
             await websocket.send_json({"type": "status", "message": "Query cannot be empty."})
             await websocket.close()
             return
+            
+        context = json_data.get("context", "")
+        if context:
+            await websocket.send_json({"type": "status", "message": "Analyzing query intent..."})
+            
+            prompt = f"""You are an intent classifier and question answerer for a civic task navigator.
+The user is asking: "{query}"
+
+The current context (nodes already generated) is:
+{context}
+
+Is the user asking for a completely new procedure roadmap, OR are they just asking a specific question related to the current context (e.g. "Can I use aadhar card?", "What is the fee?")?
+
+If it is a simple question or clarification, output a JSON with:
+{{"type": "answer", "answer": "<your helpful answer based on context>"}}
+
+If it is a request for a completely new procedure, output:
+{{"type": "procedure"}}
+"""
+            payload = {
+                "model": OLLAMA_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "format": "json"
+            }
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    res = await client.post(OLLAMA_API_URL, json=payload)
+                    res.raise_for_status()
+                    ans_data = res.json()
+                    content = json.loads(ans_data["message"]["content"])
+                    
+                    if content.get("type") == "answer" and content.get("answer"):
+                        await websocket.send_json({"type": "answer", "answer": content["answer"]})
+                        await websocket.close()
+                        return
+            except Exception as e:
+                logger.error(f"Intent check failed: {e}")
+                # Fallback to normal procedure generation
             
         # 1. Search for URLs
         await websocket.send_json({"type": "status", "message": f"Searching for: {query}..."})
