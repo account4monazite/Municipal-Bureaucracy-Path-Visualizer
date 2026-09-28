@@ -98,12 +98,94 @@ class AudexumSTTProvider:
                     data = resp.json()
                     return data.get("text", "")
                 except httpx.HTTPStatusError as exc:
+                    err_text = exc.response.text
                     if exc.response.status_code in (401, 402, 403):
-                        raise VoiceServiceError(f"Audexum STT Auth/Billing Error: {exc.response.status_code}") from exc
-                    raise VoiceServiceError(f"Audexum STT failed: {exc}") from exc
+                        raise VoiceServiceError(f"Audexum STT Auth/Billing Error: {exc.response.status_code} - {err_text}") from exc
+                    raise VoiceServiceError(f"Audexum STT failed: {exc} - Response: {err_text}") from exc
                 except httpx.HTTPError as exc:
                     raise VoiceServiceError(f"Audexum STT failed: {exc}") from exc
         raise VoiceServiceError("Audexum STT failed: max retries for 429 exceeded.")
+
+class GroqSTTProvider:
+    """Groq Speech-to-Text provider (Uses Whisper, Free, Fast)."""
+
+    def __init__(self, api_key: str) -> None:
+        self._key = api_key
+
+    async def transcribe(self, audio_bytes: bytes, mime_type: str) -> str:
+        import httpx
+        
+        url = "https://api.groq.com/openai/v1/audio/transcriptions"
+        headers = {"Authorization": f"Bearer {self._key}"}
+        
+        ext = mime_type.split("/")[-1] if "/" in mime_type else "webm"
+        # Groq expects a filename with a proper extension for whisper
+        files = {"file": (f"recording.{ext}", audio_bytes, mime_type)}
+        data = {"model": "whisper-large-v3"}
+        
+        async with httpx.AsyncClient(timeout=30) as client:
+            try:
+                resp = await client.post(url, headers=headers, files=files, data=data)
+                resp.raise_for_status()
+                result = resp.json()
+                return result.get("text", "")
+            except Exception as exc:
+                raise VoiceServiceError(f"Groq STT failed: {exc}") from exc
+
+class GSTTProvider:
+    """Free Google STT using SpeechRecognition and PyAV (no API key required)."""
+
+    def __init__(self) -> None:
+        pass
+
+    async def transcribe(self, audio_bytes: bytes, mime_type: str) -> str:
+        import speech_recognition as sr
+        import av
+        import io
+        import wave
+        import asyncio
+
+        def _transcribe():
+            # Convert WebM to WAV using PyAV
+            input_io = io.BytesIO(audio_bytes)
+            try:
+                container = av.open(input_io)
+            except Exception:
+                input_io.seek(0)
+                container = av.open(input_io, format='webm')
+                
+            audio_stream = container.streams.audio[0]
+            
+            output_io = io.BytesIO()
+            with wave.open(output_io, 'wb') as wave_write:
+                wave_write.setnchannels(1)
+                wave_write.setsampwidth(2)
+                wave_write.setframerate(16000)
+                
+                resampler = av.AudioResampler(format='s16', layout='mono', rate=16000)
+                
+                for frame in container.decode(audio_stream):
+                    for resampled_frame in resampler.resample(frame):
+                        wave_write.writeframes(bytes(resampled_frame.planes[0]))
+            
+            output_io.seek(0)
+            
+            recognizer = sr.Recognizer()
+            with sr.AudioFile(output_io) as source:
+                audio_data = recognizer.record(source)
+                
+            return recognizer.recognize_google(audio_data, language='en-IN')
+
+        try:
+            return await asyncio.to_thread(_transcribe)
+        except sr.UnknownValueError:
+            return ""
+        except Exception as exc:
+            import traceback
+            err = traceback.format_exc()
+            with open("gstt_error.log", "w") as f:
+                f.write(err)
+            raise VoiceServiceError(f"GSTT failed: {exc}") from exc
 
 
 # ── TTS protocol + providers ──────────────────────────────────────────────────
@@ -184,6 +266,54 @@ class AudexumTTSProvider:
                     raise VoiceServiceError(f"Audexum TTS failed: {exc}") from exc
         raise VoiceServiceError("Audexum TTS failed: max retries for 429 exceeded.")
 
+class EdgeTTSProvider:
+    """Microsoft Edge Text-to-Speech provider (Free, Neural, Multi-lingual)."""
+
+    def __init__(self) -> None:
+        pass
+
+    async def synthesize(self, text: str) -> bytes:
+        import edge_tts
+        
+        # Determine voice based on language heuristics if needed, or stick to a good default
+        # en-IN-NeerjaNeural is English (India), hi-IN-SwaraNeural is Hindi, mr-IN-AarohiNeural is Marathi.
+        # Since we instructed the LLM to output English, en-IN is safest.
+        voice = "en-IN-NeerjaNeural"
+        
+        try:
+            communicate = edge_tts.Communicate(text, voice)
+            audio_bytes = bytearray()
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    audio_bytes.extend(chunk["data"])
+            return bytes(audio_bytes)
+        except Exception as exc:
+            raise VoiceServiceError(f"EdgeTTS failed: {exc}") from exc
+
+class GTTSProvider:
+    """gTTS (Google Translate Text-to-Speech) provider. Free, no API key required."""
+
+    def __init__(self) -> None:
+        pass
+
+    async def synthesize(self, text: str) -> bytes:
+        from gtts import gTTS
+        import io
+        import asyncio
+
+        def _synthesize():
+            # lang="en", tld="co.in" produces Indian English
+            tts = gTTS(text=text, lang="en", tld="co.in")
+            fp = io.BytesIO()
+            tts.write_to_fp(fp)
+            return fp.getvalue()
+
+        try:
+            audio_bytes = await asyncio.to_thread(_synthesize)
+            return audio_bytes
+        except Exception as exc:
+            raise VoiceServiceError(f"gTTS failed: {exc}") from exc
+
 
 # ── VoiceService facade ───────────────────────────────────────────────────────
 
@@ -207,7 +337,13 @@ class VoiceService:
         elif provider == "audexum" and settings.audexum_api_key:
             logger.info("VoiceService: STT → AudexumSTTProvider")
             return AudexumSTTProvider(settings.audexum_api_key)
-        logger.warning("VoiceService: STT → StubSTTProvider (set STT_PROVIDER + STT_API_KEY)")
+        elif provider == "groq" and getattr(settings, "groq_api_key", None):
+            logger.info("VoiceService: STT → GroqSTTProvider")
+            return GroqSTTProvider(settings.groq_api_key)
+        elif provider == "gstt":
+            logger.info("VoiceService: STT → GSTTProvider")
+            return GSTTProvider()
+        logger.warning("VoiceService: STT → StubSTTProvider (set STT_PROVIDER)")
         return StubSTTProvider()
 
     @staticmethod
@@ -218,7 +354,13 @@ class VoiceService:
         elif provider == "audexum" and settings.audexum_api_key:
             logger.info("VoiceService: TTS → AudexumTTSProvider")
             return AudexumTTSProvider(settings.audexum_api_key)
-        logger.warning("VoiceService: TTS → StubTTSProvider (set TTS_PROVIDER + TTS_API_KEY)")
+        elif provider == "edge":
+            logger.info("VoiceService: TTS → EdgeTTSProvider")
+            return EdgeTTSProvider()
+        elif provider == "gtts":
+            logger.info("VoiceService: TTS → GTTSProvider")
+            return GTTSProvider()
+        logger.warning("VoiceService: TTS → StubTTSProvider (set TTS_PROVIDER)")
         return StubTTSProvider()
 
     async def transcribe(self, audio_bytes: bytes, mime_type: str = "audio/wav") -> str:

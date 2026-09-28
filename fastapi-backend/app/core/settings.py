@@ -36,6 +36,15 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("GROQ_MODEL", "LLM_MODEL"),
     )
 
+    ollama_api_url: str = Field(
+        default="http://localhost:11434/api/chat",
+        validation_alias=AliasChoices("OLLAMA_API_URL"),
+    )
+    ollama_model: str = Field(
+        default="llama3",
+        validation_alias=AliasChoices("OLLAMA_MODEL"),
+    )
+
     geocoding_api_key: str = ""
     geocoding_provider: str = "nominatim"
 

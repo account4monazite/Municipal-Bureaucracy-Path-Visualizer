@@ -142,13 +142,60 @@ class NLPService:
     """
 
     def __init__(self) -> None:
-        settings = get_settings()
-        self._base_url = settings.nlp_service_url.rstrip("/")
-        self._timeout = settings.nlp_service_timeout
-        self._use_mock = settings.use_mock_nlp
+        self._settings = get_settings()
+        self._base_url = self._settings.nlp_service_url.rstrip("/")
+        self._timeout = self._settings.nlp_service_timeout
+        self._use_mock = self._settings.use_mock_nlp
+        self._init_llm()
         logger.info(
             "NLPService ready (base_url=%s, use_mock=%s)", self._base_url, self._use_mock
         )
+
+    def _init_llm(self) -> None:
+        """Removed Groq init, we now just use httpx to call Ollama directly based on settings."""
+        self._llm_available = True
+        logger.info("NLPService: Ollama initialized for extraction (model=%s, url=%s)", self._settings.ollama_model, self._settings.ollama_api_url)
+
+    async def _extract_with_llm(self, user_message: str, llm_context: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        if not getattr(self, "_llm_available", False):
+            return None
+            
+        system_prompt = """You are a helpful assistant that extracts information from user messages for government services.
+Extract the user's intended task (intent), location (city, state, district), and any other relevant details from the user's message.
+Return a valid JSON object with the following keys:
+- "intent": The civic task the user wants to accomplish (e.g., "aadhaar_update", "income_certificate", "birth_certificate", "passport_application", "driving_license", "business_registration"). If the task is unclear, use "unknown" or invent a concise snake_case name for it.
+- "location": A JSON object containing "city", "state", and "district". Set values to null if not provided in the text.
+- "details": A JSON object with any other relevant details (e.g., "business_type", "document_type", etc).
+
+Ensure your output is strictly a JSON object."""
+        
+        prompt = f"User Message: {user_message}"
+        if llm_context:
+            prompt += f"\nContext: {llm_context}"
+            
+        try:
+            payload = {
+                "model": self._settings.ollama_model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                "stream": False,
+                "format": "json"
+            }
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(self._settings.ollama_api_url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                content = data.get("message", {}).get("content")
+                if content:
+                    result = json.loads(content)
+                    return result
+        except Exception as exc:
+            logger.warning("Failed to extract task with Ollama: %s", exc)
+            
+        return None
+
 
     @staticmethod
     def _extract_location(user_message: str) -> Optional[Dict[str, str]]:
@@ -241,6 +288,10 @@ class NLPService:
         Falls back gracefully.
         """
         if self._use_mock:
+            llm_result = await self._extract_with_llm(user_message, llm_context)
+            if llm_result:
+                return llm_result
+                
             # Minimal keyword-based extraction for development
             intent = self._extract_intent(user_message)
             location = self._extract_location(user_message)
@@ -265,18 +316,27 @@ class NLPService:
                 resp = await client.post(url, json=payload)
                 resp.raise_for_status()
                 data = resp.json()
-                if isinstance(data, dict) and not data.get("intent"):
-                    extracted_intent = self._extract_intent(user_message)
-                    if extracted_intent:
-                        data["intent"] = extracted_intent
-                extracted_location = self._extract_location(user_message)
-                if extracted_location and isinstance(data, dict):
-                    remote_location = data.get("location")
-                    if not isinstance(remote_location, dict):
-                        remote_location = {}
-                        data["location"] = remote_location
-                    for key, value in extracted_location.items():
-                        remote_location.setdefault(key, value)
+                if isinstance(data, dict):
+                    if not data.get("intent") or data.get("intent") == "unknown":
+                        llm_result = await self._extract_with_llm(user_message, llm_context)
+                        if llm_result:
+                            data["intent"] = llm_result.get("intent", data.get("intent"))
+                            if llm_result.get("location"):
+                                data["location"] = llm_result["location"]
+                            if llm_result.get("details"):
+                                data["details"] = llm_result["details"]
+                        else:
+                            extracted_intent = self._extract_intent(user_message)
+                            if extracted_intent:
+                                data["intent"] = extracted_intent
+                            extracted_location = self._extract_location(user_message)
+                            if extracted_location:
+                                remote_location = data.get("location")
+                                if not isinstance(remote_location, dict):
+                                    remote_location = {}
+                                    data["location"] = remote_location
+                                for key, value in extracted_location.items():
+                                    remote_location.setdefault(key, value)
                 return data
             except Exception as exc:
                 logger.warning("NLPService extract_task failed, returning empty: %s", exc)

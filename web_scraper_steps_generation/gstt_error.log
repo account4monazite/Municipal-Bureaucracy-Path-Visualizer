@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "C:\Users\prana\Documents\IDH\Municipal-Bureaucracy-Path-Visualizer\fastapi-backend\app\services\voice_service.py", line 180, in transcribe
+    return await asyncio.to_thread(_transcribe)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\prana\AppData\Local\Programs\Python\Python311\Lib\asyncio\threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\prana\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\prana\Documents\IDH\Municipal-Bureaucracy-Path-Visualizer\fastapi-backend\app\services\voice_service.py", line 169, in _transcribe
+    wave_write.writeframes(bytes(resampled_frame.planes[0]))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'av.audio.plane.AudioPlane' object has no attribute 'to_bytes'

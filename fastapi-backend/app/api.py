@@ -251,7 +251,7 @@ async def voice_respond(
         
     state = await db.get_task_state(session_id) or chatbot.create_initial_state(session_id)
     try:
-        reply_text, updated_state = await chatbot.process_message(state, transcript)
+        reply_text, updated_state = await chatbot.process_message(state, transcript, is_voice=True)
     except Exception:
         raise HTTPException(status_code=500, detail={"error": {"code": "CHATBOT_ERROR", "message": "Error"}})
         
@@ -262,7 +262,8 @@ async def voice_respond(
         reply_audio_bytes = await voice.synthesize(reply_text)
         if reply_audio_bytes:
             reply_audio_b64 = base64.b64encode(reply_audio_bytes).decode()
-    except VoiceServiceError:
+    except VoiceServiceError as exc:
+        logger.error(f"Voice synthesis failed: {exc}")
         pass
         
     return VoiceRespondResponse(

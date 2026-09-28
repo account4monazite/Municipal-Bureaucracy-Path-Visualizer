@@ -73,33 +73,40 @@ def search_gov_sites(query: str, max_results: int = 3, max_retries: int = 2):
     print("[-] After all retries, Firecrawl failed to find any results.")
     return []
 
-def fallback_scrape(url: str):
-    print(f"[*] Attempting fallback scrape for {url}")
-    try:
-        from bs4 import BeautifulSoup
-        import markdownify
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-        res = requests.get(url, headers=headers, timeout=10.0)
-        res.raise_for_status()
-        soup = BeautifulSoup(res.text, 'html.parser')
-        
-        # Remove nav, footer, scripts, styles
-        for tag in soup(['nav', 'footer', 'script', 'style', 'header', 'aside']):
-            tag.decompose()
+def fallback_scrape(url: str, max_retries: int = 2):
+    import time
+    for attempt in range(max_retries + 1):
+        if attempt > 0:
+            print(f"[*] Retry {attempt}/{max_retries} for fallback scrape: {url}...")
+            time.sleep(2)
+        else:
+            print(f"[*] Attempting fallback scrape for {url}")
             
-        md = markdownify.markdownify(str(soup), heading_style="ATX")
-        if not md.strip():
-            return None
-        return md
-    except Exception as ex:
-        print(f"[-] Fallback scrape failed: {ex}")
-        return None
+        try:
+            from bs4 import BeautifulSoup
+            import markdownify
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            res = requests.get(url, headers=headers, timeout=10.0)
+            res.raise_for_status()
+            soup = BeautifulSoup(res.text, 'html.parser')
+            
+            # Remove nav, footer, scripts, styles
+            for tag in soup(['nav', 'footer', 'script', 'style', 'header', 'aside']):
+                tag.decompose()
+                
+            md = markdownify.markdownify(str(soup), heading_style="ATX")
+            if not md.strip():
+                return None
+            return md
+        except Exception as ex:
+            print(f"[-] Fallback scrape failed on attempt {attempt + 1}: {ex}")
+            if attempt == max_retries:
+                return None
 
-def scrape_url_with_firecrawl(url: str):
+def scrape_url_with_firecrawl(url: str, max_retries: int = 2):
     """Scrape the content of a URL using Firecrawl."""
-    print(f"[*] Scraping URL with Firecrawler: {url}")
     
     headers = {
         "Content-Type": "application/json",
@@ -113,18 +120,30 @@ def scrape_url_with_firecrawl(url: str):
         "onlyMainContent": True
     }
     
-    try:
-        response = requests.post(FIRECRAWL_API_URL, json=payload, headers=headers, timeout=15.0)
-        response.raise_for_status()
-        data = response.json()
-        if data.get("success"):
-            return data["data"]["markdown"]
+    for attempt in range(max_retries + 1):
+        if attempt > 0:
+            print(f"[*] Retry {attempt}/{max_retries} for scraping URL: {url}...")
+            import time
+            time.sleep(2)
         else:
-            print(f"[-] Firecrawl failed to scrape {url}: {data.get('error')}")
-            return fallback_scrape(url)
-    except requests.exceptions.RequestException as e:
-        print(f"[-] Request to Firecrawl failed: {e}")
-        return fallback_scrape(url)
+            print(f"[*] Scraping URL with Firecrawler: {url}")
+            
+        try:
+            response = requests.post(FIRECRAWL_API_URL, json=payload, headers=headers, timeout=15.0)
+            response.raise_for_status()
+            data = response.json()
+            if data.get("success"):
+                return data["data"]["markdown"]
+            else:
+                print(f"[-] Firecrawl failed to scrape {url}: {data.get('error')}")
+                if attempt == max_retries:
+                    return fallback_scrape(url)
+        except requests.exceptions.RequestException as e:
+            print(f"[-] Request to Firecrawl failed on attempt {attempt + 1}: {e}")
+            if attempt == max_retries:
+                return fallback_scrape(url)
+                
+    return fallback_scrape(url)
 
 class ProcedureResponse(BaseModel):
     process_type: str

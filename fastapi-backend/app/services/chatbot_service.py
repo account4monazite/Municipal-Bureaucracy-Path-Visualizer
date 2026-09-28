@@ -25,10 +25,15 @@ RULES:
 REQUIRED INFORMATION (gather in order of priority):
 - What civic task does the user want to accomplish? (e.g. register a business, get a passport)
 - Which city/state are they in? (needed for jurisdiction-specific requirements)
-- Any task-specific details (e.g. business type for registration)
 
 After gathering minimum required info, say something like:
-"Great! I have enough to generate your step-by-step roadmap for [task] in [city]. Shall I proceed?"
+"Great! I have enough to generate your step-by-step roadmap for [task] in [city]."
+
+DONT'T ASK ANY FOLLOW UP QUESTION FOR CLARIFICATION IF YOU HAVE THE [task] and [city/state.
+ALSO DON'T ASK IS THIS CORRECT, SHALL I PROCEED?, nothing like that.
+NO QUESTIONS SHOULD BE ASKED FOLLOW WHAT IS GIVEN.
+
+7. ALWAYS reply in English, even if the user speaks in Hindi or another language. This is critical for the text-to-speech system to work.
 """
 
 
@@ -45,22 +50,11 @@ class ChatbotService:
         self._settings = get_settings()
         self._llm_client = None
         self._llm_available = False
-        self._init_groq()
+        self._init_llm()
 
-    def _init_groq(self) -> None:
-        if not self._settings.groq_api_key:
-            logger.warning(
-                "GROQ_API_KEY not set — chatbot will use rule-based responses only."
-            )
-            return
-        try:
-            from groq import AsyncGroq
-
-            self._llm_client = AsyncGroq(api_key=self._settings.groq_api_key)
-            self._llm_available = True
-            logger.info("ChatbotService: Groq initialized (model=%s)", self._settings.groq_model)
-        except Exception as exc:
-            logger.error("Failed to initialize Groq client: %s", exc)
+    def _init_llm(self) -> None:
+        self._llm_available = True
+        logger.info("ChatbotService: Ollama initialized (model=%s, url=%s)", self._settings.ollama_model, self._settings.ollama_api_url)
 
     # ── Public interface ──────────────────────────────────────────────────────
 
@@ -68,6 +62,7 @@ class ChatbotService:
         self,
         state: TaskState,
         user_message: str,
+        is_voice: bool = False,
     ) -> tuple[str, TaskState]:
         """
         Process a single user message given the current task state.
@@ -85,7 +80,7 @@ class ChatbotService:
         state = self._merge_extracted(state, extracted)
 
         # 3. Generate reply
-        reply = await self._generate_reply(state, user_message)
+        reply = await self._generate_reply(state, user_message, is_voice)
 
         # 4. Re-check what's missing after extraction
         state.missing_information = self._compute_missing(state)
@@ -132,24 +127,37 @@ class ChatbotService:
             missing.append("location")
         return missing
 
-    async def _generate_reply(self, state: TaskState, user_message: str) -> str:
+    async def _generate_reply(self, state: TaskState, user_message: str, is_voice: bool = False) -> str:
         """Generate the chatbot reply using LLM or rule-based fallback."""
-        if self._llm_available and self._llm_client:
-            return await self._llm_reply(state, user_message)
-        return self._rule_based_reply(state)
+        if self._llm_available:
+            return await self._llm_reply(state, user_message, is_voice)
+        return self._rule_based_reply(state, is_voice)
 
-    async def _llm_reply(self, state: TaskState, user_message: str) -> str:
-        """Generate a reply using Groq chat completions."""
-        client = self._llm_client
-        if client is None:
-            return self._rule_based_reply(state)
-
+    async def _llm_reply(self, state: TaskState, user_message: str, is_voice: bool = False) -> str:
+        """Generate a reply using Ollama chat completions."""
         context_note = self._build_context_note(state)
         system_message = SYSTEM_PROMPT
         if context_note:
             system_message += f"\n\nCurrent task state:\n{context_note}"
+        
+        if is_voice:
+            # Prevent conflicting instructions by explicitly replacing the question prompts
+            system_message = system_message.replace(
+                '"Great! I have enough to generate your step-by-step roadmap for [task] in [city]. Shall I proceed?"',
+                '"Great! I have enough information. I am now looking up the step-by-step procedure for [task] in [city]."'
+            ).replace(
+                "6. Once you have (intent + location), confirm and offer to generate the step-by-step roadmap.",
+                "6. Once you have (intent + location), confirm that you are generating the step-by-step roadmap (do NOT ask a question)."
+            ).replace(
+                "2. Ask ONLY the next most important missing piece of information. Do not ask multiple questions at once.",
+                "2. Do NOT ask for any missing information. Accept whatever the user provided."
+            ).replace(
+                "- Any task-specific details (e.g. business type for registration)",
+                ""
+            )
+            system_message += "\n\nCRITICAL INSTRUCTION: The user provided this input via voice. You MUST NOT ask any follow-up questions for clarification (e.g. do NOT ask for license type, business type, etc). Just acknowledge the intent and location, confirm you understood, and state what is happening next."
 
-        messages: list[ChatCompletionMessageParam] = [
+        messages = [
             {"role": "system", "content": system_message},
         ]
         for message in state.conversation_history[:-1]:
@@ -162,29 +170,33 @@ class ChatbotService:
 
         messages.append({"role": "user", "content": user_message})
 
-        model = self._settings.groq_model.strip()
+        model = self._settings.ollama_model.strip()
         try:
-            logger.info("Sending chat completion request to Groq (model=%s)", model)
-            response = await client.chat.completions.create(
-                model=model,
-                messages=messages,
-            )
-            logger.info(
-                "Groq API request succeeded (model=%s, request_id=%s)",
-                model,
-                getattr(response, "id", "unknown"),
-            )
-            reply = response.choices[0].message.content
+            logger.info("Sending chat completion request to Ollama (model=%s)", model)
+            import httpx
+            payload = {
+                "model": model,
+                "messages": messages,
+                "stream": False
+            }
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(self._settings.ollama_api_url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+            
+            reply = data.get("message", {}).get("content")
             return reply or self._rule_based_reply(state)
         except Exception:
-            logger.exception("Groq reply generation failed (model=%s)", model)
+            logger.exception("Ollama reply generation failed (model=%s)", model)
             return self._rule_based_reply(state)
 
-    def _rule_based_reply(self, state: TaskState) -> str:
+    def _rule_based_reply(self, state: TaskState, is_voice: bool = False) -> str:
         """Simple rule-based fallback when the LLM is unavailable."""
         missing = self._compute_missing(state)
 
         if "civic_task" in missing:
+            if is_voice:
+                return "I'm here to help you navigate government procedures. I still need to know what you would like to accomplish, for example, registering a business or applying for a passport."
             return (
                 "Hello! I'm here to help you navigate government procedures. "
                 "What would you like to accomplish? For example: register a business, "
@@ -193,6 +205,8 @@ class ChatbotService:
 
         if "location" in missing:
             task_display = (state.intent or "your task").replace("_", " ").title()
+            if is_voice:
+                return f"I can help you with {task_display}. I still need to know which city or state you are in to find the right offices and requirements."
             return (
                 f"I can help you with {task_display}. "
                 "Which city or state are you in? This helps me find the right offices and requirements for you."
@@ -201,6 +215,10 @@ class ChatbotService:
         # We have enough info
         city = state.location.city or state.location.state or "your area"
         task_display = (state.intent or "your task").replace("_", " ").title()
+        
+        if is_voice:
+            return f"Great! I have enough information to generate your roadmap for {task_display} in {city}. I am generating it now."
+            
         return (
             f"Great! I have enough information to generate your roadmap for "
             f"{task_display} in {city}. "

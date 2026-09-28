@@ -17,8 +17,8 @@ def _make_chatbot() -> ChatbotService:
     """Create a ChatbotService with LLM disabled."""
     nlp = MagicMock(spec=NLPService)
     with patch("app.services.chatbot_service.get_settings") as mock_settings:
-        mock_settings.return_value.groq_api_key = ""
-        mock_settings.return_value.groq_model = "openai/gpt-oss-20b"
+        mock_settings.return_value.ollama_api_url = "http://localhost:11434/api/chat"
+        mock_settings.return_value.ollama_model = "llama3"
         return ChatbotService(nlp_service=nlp)
 
 
@@ -112,8 +112,8 @@ async def test_process_message_asks_for_task():
     nlp.extract_task = AsyncMock(return_value={"intent": None, "location": None, "details": {}})
 
     with patch("app.services.chatbot_service.get_settings") as mock_settings:
-        mock_settings.return_value.groq_api_key = ""
-        mock_settings.return_value.groq_model = "openai/gpt-oss-20b"
+        mock_settings.return_value.ollama_api_url = "http://localhost:11434/api/chat"
+        mock_settings.return_value.ollama_model = "llama3"
         cb = ChatbotService(nlp_service=nlp)
 
     state = cb.create_initial_state("sess1")
@@ -135,8 +135,8 @@ async def test_process_message_extracts_business_registration():
     )
 
     with patch("app.services.chatbot_service.get_settings") as mock_settings:
-        mock_settings.return_value.groq_api_key = ""
-        mock_settings.return_value.groq_model = "openai/gpt-oss-20b"
+        mock_settings.return_value.ollama_api_url = "http://localhost:11434/api/chat"
+        mock_settings.return_value.ollama_model = "llama3"
         cb = ChatbotService(nlp_service=nlp)
 
     state = cb.create_initial_state("sess1")
@@ -150,35 +150,45 @@ async def test_process_message_extracts_business_registration():
 
 
 @pytest.mark.asyncio
-async def test_groq_reply_uses_chat_history_and_configured_model():
+async def test_ollama_reply_uses_chat_history_and_configured_model():
     nlp = MagicMock(spec=NLPService)
-    mock_client = MagicMock()
-    mock_client.chat.completions.create = AsyncMock(
-        return_value=SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content="Groq reply"))]
-        )
-    )
-    mock_groq = MagicMock(AsyncGroq=MagicMock(return_value=mock_client))
     settings = SimpleNamespace(
-        groq_api_key="test-key",
-        groq_model="openai/gpt-oss-20b",
+        ollama_api_url="http://localhost:11434/api/chat",
+        ollama_model="llama3",
     )
 
     with patch("app.services.chatbot_service.get_settings", return_value=settings):
-        with patch.dict("sys.modules", {"groq": mock_groq}):
-            chatbot = ChatbotService(nlp_service=nlp)
+        chatbot = ChatbotService(nlp_service=nlp)
 
-    state = TaskState(session_id="groq-test")
+    state = TaskState(session_id="ollama-test")
     state.conversation_history.append(ChatMessage(role="user", content="Earlier question"))
     state.conversation_history.append(ChatMessage(role="user", content="Current question"))
-    reply = await chatbot._llm_reply(state, "Current question")
 
-    assert reply == "Groq reply"
-    mock_client.chat.completions.create.assert_awaited_once()
-    call = mock_client.chat.completions.create.await_args
+    # We patch httpx.AsyncClient to return our mock response
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"message": {"content": "Ollama reply"}}
+    
+    mock_post = AsyncMock(return_value=mock_response)
+    
+    # Needs to match exactly how httpx is called in ChatbotService
+    mock_client_instance = AsyncMock()
+    mock_client_instance.post = mock_post
+    # async context manager support for AsyncClient
+    mock_client_instance.__aenter__.return_value = mock_client_instance
+
+    with patch("httpx.AsyncClient", return_value=mock_client_instance):
+        reply = await chatbot._llm_reply(state, "Current question")
+
+    assert reply == "Ollama reply"
+    mock_post.assert_awaited_once()
+    call = mock_post.await_args
     assert call is not None
-    request = call.kwargs
-    assert request["model"] == "openai/gpt-oss-20b"
+    
+    url = call.args[0]
+    request = call.kwargs["json"]
+    
+    assert url == "http://localhost:11434/api/chat"
+    assert request["model"] == "llama3"
     assert request["messages"][0]["role"] == "system"
     assert {"role": "user", "content": "Earlier question"} in request["messages"]
     assert request["messages"][-1] == {"role": "user", "content": "Current question"}
