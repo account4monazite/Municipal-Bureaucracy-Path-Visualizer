@@ -213,6 +213,17 @@ class VoiceRespondResponse(BaseModel):
     task_state: TaskState
     audio_mime_type: str = "audio/mpeg"
 
+class GraphUpdate(BaseModel):
+    node_id: str
+    new_status: str
+
+class VoiceJourneyResponse(BaseModel):
+    transcript: str
+    voice_reply: str
+    graph_updates: list[GraphUpdate]
+    reply_audio_b64: str
+    audio_mime_type: str = "audio/mpeg"
+
 @api_router.post("/voice/transcribe", response_model=TranscribeResponse)
 async def transcribe_audio(
     audio: UploadFile = File(...),
@@ -271,4 +282,50 @@ async def voice_respond(
         reply_text=reply_text,
         reply_audio_b64=reply_audio_b64,
         task_state=updated_state,
+    )
+
+@api_router.post("/voice/journey", response_model=VoiceJourneyResponse)
+async def voice_journey(
+    audio: UploadFile = File(...),
+    session_id: str = Form(...),
+    graph_state: str = Form(...),
+    voice: VoiceService = Depends(get_voice_service),
+    chatbot: ChatbotService = Depends(get_chatbot_service),
+) -> VoiceJourneyResponse:
+    mime_type = audio.content_type or "audio/wav"
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail={"error": {"code": "EMPTY_AUDIO", "message": "Empty"}})
+        
+    try:
+        transcript = await voice.transcribe(audio_bytes, mime_type)
+    except VoiceServiceError as exc:
+        raise HTTPException(status_code=503, detail={"error": {"code": "STT_FAILED", "message": str(exc)}})
+        
+    if not transcript.strip():
+        raise HTTPException(status_code=400, detail={"error": {"code": "EMPTY_TRANSCRIPT", "message": "Empty"}})
+        
+    try:
+        journey_result = await chatbot.process_journey_voice(session_id, transcript, graph_state)
+    except Exception:
+        logger.exception("Chatbot journey processing failed")
+        raise HTTPException(status_code=500, detail={"error": {"code": "CHATBOT_ERROR", "message": "Error"}})
+        
+    reply_text = journey_result.get("voice_reply", "I'm not sure how to respond.")
+    graph_updates = journey_result.get("graph_updates", [])
+    
+    reply_audio_b64 = ""
+    try:
+        reply_audio_bytes = await voice.synthesize(reply_text)
+        if reply_audio_bytes:
+            reply_audio_b64 = base64.b64encode(reply_audio_bytes).decode()
+    except VoiceServiceError as exc:
+        logger.error(f"Voice synthesis failed: {exc}")
+        pass
+        
+    return VoiceJourneyResponse(
+        transcript=transcript,
+        voice_reply=reply_text,
+        graph_updates=[GraphUpdate(**u) for u in graph_updates if isinstance(u, dict)],
+        reply_audio_b64=reply_audio_b64,
     )

@@ -243,3 +243,69 @@ class ChatbotService:
     def create_initial_state(self, session_id: str) -> TaskState:
         """Create a fresh task state for a new session."""
         return TaskState(session_id=session_id)
+
+    async def process_journey_voice(self, session_id: str, transcript: str, graph_state_str: str) -> dict:
+        """
+        Heuristic Engine for the Auditory User Journey.
+        Evaluates the user's transcribed text against the current graph state.
+        """
+        import json
+        import httpx
+        try:
+            graph_state = json.loads(graph_state_str)
+        except Exception:
+            graph_state = {}
+
+        node_statuses = graph_state.get("nodeStatuses", {})
+
+        locked_prereqs = [n_id for n_id, status in node_statuses.items() if status == "locked" and not n_id.startswith("step_")]
+        
+        heuristic_hints = []
+        if locked_prereqs:
+            heuristic_hints.append(f"Prerequisites Phase: Check which prerequisite nodes are locked. The user is missing: {locked_prereqs}. Ask them if they have it. If they ask how to get it, provide brief instructions.")
+        
+        heuristic_hints.append("Sequential Lock Check: If the user mentions completing a step (e.g., 'Step 2'), but the graph_state shows Step 1 is in-progress or locked, tell them Step 2 is locked until they finish Step 1.")
+        heuristic_hints.append("Unlocking Phase: If the user confirms a step/document, acknowledge it and state the next required item.")
+
+        system_message = f"""You are an Auditory User Journey assistant.
+Current Graph State (showing node_statuses):
+{json.dumps(node_statuses)}
+
+HEURISTICS:
+{chr(10).join(heuristic_hints)}
+
+Force your response as a strict JSON structure containing both the auditory response and the visual graph updates:
+{{
+  "voice_reply": "Your spoken reply here",
+  "graph_updates": [
+    {{ "node_id": "doc_aadhaar", "new_status": "completed" }}
+  ]
+}}
+
+Only update new_status to 'completed' or 'in-progress'.
+Transcript from user: {transcript}
+"""
+        messages = [{"role": "system", "content": system_message}]
+
+        model = self._settings.ollama_model.strip()
+        try:
+            logger.info("Sending journey heuristic completion request to Ollama (model=%s)", model)
+            payload = {
+                "model": model,
+                "messages": messages,
+                "stream": False,
+                "format": "json"
+            }
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(self._settings.ollama_api_url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+            
+            reply_content = data.get("message", {}).get("content", "{}")
+            return json.loads(reply_content)
+        except Exception as e:
+            logger.exception("Journey LLM failed")
+            return {
+                "voice_reply": "I'm having trouble processing your journey right now.",
+                "graph_updates": []
+            }

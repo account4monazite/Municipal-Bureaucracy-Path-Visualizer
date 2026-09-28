@@ -1,5 +1,5 @@
 {
-  "task": "driving_license Mumbai",
+  "task": "driving license Mumbai",
   "narrative": "Process Type: Hybrid. Estimated Time: Information not available in the provided context.",
   "initialNodes": [
     "node_prereqs_main",
@@ -7,8 +7,7 @@
     "step_2",
     "step_3",
     "step_4",
-    "step_5",
-    "step_6"
+    "step_5"
   ],
   "initialEdges": [
     {
@@ -30,39 +29,49 @@
     {
       "source": "step_4",
       "target": "step_5"
-    },
-    {
-      "source": "step_5",
-      "target": "step_6"
     }
   ],
   "nodes": {
     "prereq_1": {
       "id": "prereq_1",
       "type": "process",
-      "title": "User must have a valid driving...",
-      "chatText": "User must have a valid driving license",
+      "title": "Valid identification",
+      "chatText": "Valid identification",
       "prerequisites": []
     },
     "prereq_2": {
       "id": "prereq_2",
       "type": "process",
-      "title": "User must be a resident of Mum...",
-      "chatText": "User must be a resident of Mumbai",
+      "title": "Proof of residence in Mumbai",
+      "chatText": "Proof of residence in Mumbai",
       "prerequisites": []
     },
     "doc_1": {
       "id": "doc_1",
       "type": "document",
-      "title": "Valid driving license",
-      "chatText": "Valid driving license",
+      "title": "Driving License Application Fo...",
+      "chatText": "Driving License Application Form",
       "prerequisites": []
     },
     "doc_2": {
       "id": "doc_2",
       "type": "document",
-      "title": "Proof of residence in Mumbai",
-      "chatText": "Proof of residence in Mumbai",
+      "title": "Proof of Identity (Aadhaar, PA...",
+      "chatText": "Proof of Identity (Aadhaar, PAN, Passport)",
+      "prerequisites": []
+    },
+    "doc_3": {
+      "id": "doc_3",
+      "type": "document",
+      "title": "Proof of Address (Rental Agree...",
+      "chatText": "Proof of Address (Rental Agreement, Utility Bill, Property Deed)",
+      "prerequisites": []
+    },
+    "doc_4": {
+      "id": "doc_4",
+      "type": "document",
+      "title": "Recent Passport-sized Photogra...",
+      "chatText": "Recent Passport-sized Photographs",
       "prerequisites": []
     },
     "node_prereqs_main": {
@@ -74,49 +83,44 @@
         "prereq_1",
         "prereq_2",
         "doc_1",
-        "doc_2"
+        "doc_2",
+        "doc_3",
+        "doc_4"
       ]
     },
     "step_1": {
       "id": "step_1",
       "type": "process",
-      "title": "Step 1: Visit the Parivahan website ([https://parivahan",
-      "chatText": "Step 1: Visit the Parivahan website ([https://parivahan.gov.in/](https://parivahan.gov.in/)) and click on the 'Driving License Related Services' section",
+      "title": "Step 1",
+      "chatText": "Step 1: Book an appointment for a driving test or license application at the RTO office in Mumbai. You can do this online or by visiting the office in person.",
       "prerequisites": []
     },
     "step_2": {
       "id": "step_2",
       "type": "process",
       "title": "Step 2",
-      "chatText": "Step 2: Select the 'Appointment for License' option and fill out the required information",
+      "chatText": "Step 2: Fill out the Driving License Application Form and attach the required documents (Proof of Identity, Proof of Address, and Recent Passport-sized Photographs).",
       "prerequisites": []
     },
     "step_3": {
       "id": "step_3",
       "type": "process",
       "title": "Step 3",
-      "chatText": "Step 3: Upload the required documentation (valid driving license and proof of residence in Mumbai)",
+      "chatText": "Step 3: Submit the application form and required documents to the RTO office during your scheduled appointment.",
       "prerequisites": []
     },
     "step_4": {
       "id": "step_4",
       "type": "process",
       "title": "Step 4",
-      "chatText": "Step 4: Wait for the appointment confirmation and schedule a visit to the RTO office in Mumbai",
+      "chatText": "Step 4: Take the driving test (if applicable) and pass it to obtain your driving license.",
       "prerequisites": []
     },
     "step_5": {
       "id": "step_5",
       "type": "process",
       "title": "Step 5",
-      "chatText": "Step 5: Visit the RTO office and submit the application in person",
-      "prerequisites": []
-    },
-    "step_6": {
-      "id": "step_6",
-      "type": "process",
-      "title": "Step 6",
-      "chatText": "Step 6: Wait for the processing and issuance of the new driving license",
+      "chatText": "Step 5: Collect your driving license from the RTO office once it is processed.",
       "prerequisites": []
     }
   }
