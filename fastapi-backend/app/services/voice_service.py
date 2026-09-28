@@ -22,13 +22,13 @@ class VoiceServiceError(Exception):
 
 @runtime_checkable
 class STTProvider(Protocol):
-    async def transcribe(self, audio_bytes: bytes, mime_type: str) -> str: ...
+    async def transcribe(self, audio_bytes: bytes, mime_type: str, language: str = "en") -> str: ...
 
 
 class StubSTTProvider:
     """Stub provider for development / testing (returns a placeholder)."""
 
-    async def transcribe(self, audio_bytes: bytes, mime_type: str) -> str:
+    async def transcribe(self, audio_bytes: bytes, mime_type: str, language: str = "en") -> str:
         logger.warning("StubSTTProvider: returning placeholder transcription.")
         return "[STT provider not configured — set STT_PROVIDER and STT_API_KEY]"
 
@@ -39,7 +39,7 @@ class GoogleSTTProvider:
     def __init__(self, api_key: str) -> None:
         self._key = api_key
 
-    async def transcribe(self, audio_bytes: bytes, mime_type: str) -> str:
+    async def transcribe(self, audio_bytes: bytes, mime_type: str, language: str = "en") -> str:
         import httpx
 
         encoding_map = {
@@ -51,9 +51,12 @@ class GoogleSTTProvider:
         }
         encoding = encoding_map.get(mime_type, "LINEAR16")
         audio_b64 = base64.b64encode(audio_bytes).decode()
+        
+        lang_map = {"hi": "hi-IN", "mr": "mr-IN", "gu": "gu-IN", "ta": "ta-IN", "te": "te-IN", "kn": "kn-IN", "ml": "ml-IN", "bn": "bn-IN"}
+        stt_lang = lang_map.get(language, "en-IN")
 
         payload = {
-            "config": {"encoding": encoding, "languageCode": "en-IN", "enableAutomaticPunctuation": True},
+            "config": {"encoding": encoding, "languageCode": stt_lang, "enableAutomaticPunctuation": True},
             "audio": {"content": audio_b64},
         }
         url = f"https://speech.googleapis.com/v1/speech:recognize?key={self._key}"
@@ -78,7 +81,7 @@ class AudexumSTTProvider:
     def __init__(self, api_key: str) -> None:
         self._key = api_key
 
-    async def transcribe(self, audio_bytes: bytes, mime_type: str) -> str:
+    async def transcribe(self, audio_bytes: bytes, mime_type: str, language: str = "en") -> str:
         import httpx
         import asyncio
 
@@ -112,7 +115,7 @@ class GroqSTTProvider:
     def __init__(self, api_key: str) -> None:
         self._key = api_key
 
-    async def transcribe(self, audio_bytes: bytes, mime_type: str) -> str:
+    async def transcribe(self, audio_bytes: bytes, mime_type: str, language: str = "en") -> str:
         import httpx
         
         url = "https://api.groq.com/openai/v1/audio/transcriptions"
@@ -122,6 +125,8 @@ class GroqSTTProvider:
         # Groq expects a filename with a proper extension for whisper
         files = {"file": (f"recording.{ext}", audio_bytes, mime_type)}
         data = {"model": "whisper-large-v3"}
+        if language != "en":
+            data["language"] = language
         
         async with httpx.AsyncClient(timeout=30) as client:
             try:
@@ -138,7 +143,7 @@ class GSTTProvider:
     def __init__(self) -> None:
         pass
 
-    async def transcribe(self, audio_bytes: bytes, mime_type: str) -> str:
+    async def transcribe(self, audio_bytes: bytes, mime_type: str, language: str = "en") -> str:
         import speech_recognition as sr
         import av
         import io
@@ -173,8 +178,10 @@ class GSTTProvider:
             recognizer = sr.Recognizer()
             with sr.AudioFile(output_io) as source:
                 audio_data = recognizer.record(source)
-                
-            return recognizer.recognize_google(audio_data, language='en-IN')
+            
+            lang_map = {"hi": "hi-IN", "mr": "mr-IN", "gu": "gu-IN", "ta": "ta-IN", "te": "te-IN", "kn": "kn-IN", "ml": "ml-IN", "bn": "bn-IN"}
+            stt_lang = lang_map.get(language, "en-IN")
+            return recognizer.recognize_google(audio_data, language=stt_lang)
 
         try:
             return await asyncio.to_thread(_transcribe)
@@ -193,13 +200,13 @@ class GSTTProvider:
 
 @runtime_checkable
 class TTSProvider(Protocol):
-    async def synthesize(self, text: str) -> bytes: ...
+    async def synthesize(self, text: str, language: str = "en") -> bytes: ...
 
 
 class StubTTSProvider:
     """Stub provider for development / testing."""
 
-    async def synthesize(self, text: str) -> bytes:
+    async def synthesize(self, text: str, language: str = "en") -> bytes:
         logger.warning("StubTTSProvider: no audio generated.")
         return b""
 
@@ -210,12 +217,15 @@ class GoogleTTSProvider:
     def __init__(self, api_key: str) -> None:
         self._key = api_key
 
-    async def synthesize(self, text: str) -> bytes:
+    async def synthesize(self, text: str, language: str = "en") -> bytes:
         import httpx
+
+        lang_map = {"hi": "hi-IN", "mr": "mr-IN", "gu": "gu-IN", "ta": "ta-IN", "te": "te-IN", "kn": "kn-IN", "ml": "ml-IN", "bn": "bn-IN"}
+        tts_lang = lang_map.get(language, "en-IN")
 
         payload = {
             "input": {"text": text},
-            "voice": {"languageCode": "en-IN", "name": "en-IN-Standard-A"},
+            "voice": {"languageCode": tts_lang},
             "audioConfig": {"audioEncoding": "MP3"},
         }
         url = f"https://texttospeech.googleapis.com/v1/text:synthesize?key={self._key}"
@@ -238,7 +248,7 @@ class AudexumTTSProvider:
     def __init__(self, api_key: str) -> None:
         self._key = api_key
 
-    async def synthesize(self, text: str) -> bytes:
+    async def synthesize(self, text: str, language: str = "en") -> bytes:
         import httpx
         import asyncio
 
@@ -272,13 +282,20 @@ class EdgeTTSProvider:
     def __init__(self) -> None:
         pass
 
-    async def synthesize(self, text: str) -> bytes:
+    async def synthesize(self, text: str, language: str = "en") -> bytes:
         import edge_tts
         
-        # Determine voice based on language heuristics if needed, or stick to a good default
-        # en-IN-NeerjaNeural is English (India), hi-IN-SwaraNeural is Hindi, mr-IN-AarohiNeural is Marathi.
-        # Since we instructed the LLM to output English, en-IN is safest.
-        voice = "en-IN-NeerjaNeural"
+        voice_map = {
+            "hi": "hi-IN-SwaraNeural",
+            "mr": "mr-IN-AarohiNeural",
+            "gu": "gu-IN-DhwaniNeural",
+            "ta": "ta-IN-PallaviNeural",
+            "te": "te-IN-ShrutiNeural",
+            "kn": "kn-IN-SapnaNeural",
+            "ml": "ml-IN-SobhanaNeural",
+            "bn": "bn-IN-TanishaaNeural"
+        }
+        voice = voice_map.get(language, "en-IN-NeerjaNeural")
         
         try:
             communicate = edge_tts.Communicate(text, voice)
@@ -296,14 +313,14 @@ class GTTSProvider:
     def __init__(self) -> None:
         pass
 
-    async def synthesize(self, text: str) -> bytes:
+    async def synthesize(self, text: str, language: str = "en") -> bytes:
         from gtts import gTTS
         import io
         import asyncio
 
         def _synthesize():
             # lang="en", tld="co.in" produces Indian English
-            tts = gTTS(text=text, lang="en", tld="co.in")
+            tts = gTTS(text=text, lang=language)
             fp = io.BytesIO()
             tts.write_to_fp(fp)
             return fp.getvalue()
@@ -363,19 +380,46 @@ class VoiceService:
         logger.warning("VoiceService: TTS → StubTTSProvider (set TTS_PROVIDER)")
         return StubTTSProvider()
 
-    async def transcribe(self, audio_bytes: bytes, mime_type: str = "audio/wav") -> str:
+    async def transcribe(self, audio_bytes: bytes, mime_type: str = "audio/wav", language: str = "en") -> str:
         """Convert audio bytes to text."""
         try:
-            return await self._stt.transcribe(audio_bytes, mime_type)
+            return await self._stt.transcribe(audio_bytes, mime_type, language)
         except VoiceServiceError:
             raise
         except Exception as exc:
             raise VoiceServiceError(f"Unexpected STT error: {exc}") from exc
 
-    async def synthesize(self, text: str) -> bytes:
+    async def translate_text(self, text: str, target_lang: str) -> str:
+        if target_lang == "en" or not text.strip():
+            return text
+            
+        import urllib.request
+        import urllib.parse
+        import json
+        import asyncio
+        
+        def _do_translate():
+            url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl={target_lang}&dt=t&q={urllib.parse.quote(text)}"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            try:
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    data = json.loads(response.read().decode('utf-8'))
+                    if isinstance(data, list) and len(data) > 0 and isinstance(data[0], list):
+                        translated = "".join(item[0] for item in data[0] if item and item[0])
+                        if translated:
+                            return translated
+            except Exception as e:
+                logger.error(f"Failed to translate text to {target_lang}: {e}")
+            return text
+            
+        return await asyncio.to_thread(_do_translate)
+
+    async def synthesize(self, text: str, language: str = "en") -> bytes:
         """Convert text to audio bytes (MP3)."""
         try:
-            return await self._tts.synthesize(text)
+            # Always translate the text first before feeding it to the native neural voice
+            translated_text = await self.translate_text(text, language)
+            return await self._tts.synthesize(translated_text, language)
         except VoiceServiceError:
             raise
         except Exception as exc:

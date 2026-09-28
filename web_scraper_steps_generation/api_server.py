@@ -394,6 +394,7 @@ class VoiceJourneyResponse(BaseModel):
 
 class SynthesizeRequest(BaseModel):
     text: str
+    language: Optional[str] = "en"
 
 class SynthesizeResponse(BaseModel):
     audio_b64: str
@@ -402,6 +403,7 @@ class SynthesizeResponse(BaseModel):
 @app.post("/voice/transcribe", response_model=TranscribeResponse)
 async def transcribe_audio(
     audio: UploadFile = File(...),
+    language: str = Form("en"),
     voice: VoiceService = Depends(get_voice_service),
 ) -> TranscribeResponse:
     mime_type = audio.content_type or "audio/wav"
@@ -413,7 +415,7 @@ async def transcribe_audio(
     if not audio_bytes:
         raise HTTPException(status_code=400, detail={"error": {"code": "EMPTY_AUDIO", "message": "Empty"}})
     try:
-        transcript = await voice.transcribe(audio_bytes, mime_type)
+        transcript = await voice.transcribe(audio_bytes, mime_type, language)
     except VoiceServiceError as exc:
         raise HTTPException(status_code=503, detail={"error": {"code": "STT_FAILED", "message": str(exc)}})
     action = parse_voice_command(transcript)
@@ -423,6 +425,7 @@ async def transcribe_audio(
 async def voice_respond(
     audio: UploadFile = File(...),
     session_id: str = Form(...),
+    language: str = Form("en"),
     voice: VoiceService = Depends(get_voice_service),
     chatbot: ChatbotService = Depends(get_chatbot_service),
     db: SupabaseService = Depends(get_supabase_service),
@@ -437,7 +440,7 @@ async def voice_respond(
         raise HTTPException(status_code=400, detail={"error": {"code": "EMPTY_AUDIO", "message": "Empty"}})
         
     try:
-        transcript = await voice.transcribe(audio_bytes, mime_type)
+        transcript = await voice.transcribe(audio_bytes, mime_type, language)
     except VoiceServiceError as exc:
         raise HTTPException(status_code=503, detail={"error": {"code": "STT_FAILED", "message": str(exc)}})
         
@@ -454,7 +457,7 @@ async def voice_respond(
     
     reply_audio_b64 = ""
     try:
-        reply_audio_bytes = await voice.synthesize(reply_text)
+        reply_audio_bytes = await voice.synthesize(reply_text, language)
         if reply_audio_bytes:
             reply_audio_b64 = base64.b64encode(reply_audio_bytes).decode()
     except VoiceServiceError:
@@ -473,7 +476,7 @@ async def synthesize_endpoint(
     voice: VoiceService = Depends(get_voice_service)
 ):
     try:
-        audio_bytes = await voice.synthesize(body.text)
+        audio_bytes = await voice.synthesize(body.text, body.language)
         audio_b64 = base64.b64encode(audio_bytes).decode()
         return SynthesizeResponse(audio_b64=audio_b64)
     except Exception as e:
@@ -485,6 +488,7 @@ async def voice_journey(
     audio: UploadFile = File(...),
     session_id: str = Form(...),
     graph_state: str = Form(...),
+    language: str = Form("en"),
     voice: VoiceService = Depends(get_voice_service),
     chatbot: ChatbotService = Depends(get_chatbot_service),
     db: SupabaseService = Depends(get_supabase_service),
@@ -499,7 +503,7 @@ async def voice_journey(
         raise HTTPException(status_code=400, detail={"error": {"code": "EMPTY_AUDIO", "message": "Empty"}})
         
     try:
-        transcript = await voice.transcribe(audio_bytes, mime_type)
+        transcript = await voice.transcribe(audio_bytes, mime_type, language)
     except VoiceServiceError as exc:
         raise HTTPException(status_code=503, detail={"error": {"code": "STT_FAILED", "message": str(exc)}})
         
@@ -538,7 +542,7 @@ async def voice_journey(
     
     reply_audio_b64 = ""
     try:
-        reply_audio_bytes = await voice.synthesize(reply_text)
+        reply_audio_bytes = await voice.synthesize(reply_text, language)
         if reply_audio_bytes:
             reply_audio_b64 = base64.b64encode(reply_audio_bytes).decode()
     except VoiceServiceError:
